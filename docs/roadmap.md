@@ -18,9 +18,23 @@ comparisons for all LLVM `icmp` predicates, returned as zero-extended Rust
 `bool`, plus `u32` wrapping left/right shifts and `i32` arithmetic right
 shifts. Dynamic Rust wrapping shifts use a five-bit count mask; SPU `rotm` and
 `rotma` receive the negated count required by their instruction semantics.
-Unit tests cover lowering, bool normalization, temporary reuse, and preserving
-a count that remains live. End-to-end tests compile Rust examples, assemble
-them, inspect ELF headers, and check disassembly. See `docs/validation.md`.
+It also lowers Rust `rotate_left` and `rotate_right` through LLVM's funnel-shift
+intrinsics to SPU `rot` and `roti`; this covers only the rotate form where both
+funnel inputs are identical. Rotate counts wrap modulo 32. Unit tests cover
+lowering, bool normalization, temporary reuse, and preserving a count that
+remains live. Rust `leading_zeros` also maps to the native SPU `clz` instruction
+when LLVM emits `ctlz.i32` with defined-zero semantics. End-to-end tests compile
+Rust examples, assemble them, inspect ELF headers, and check disassembly.
+Emulator tests check variable rotate counts 0, 1, 31, 32, 33, and
+`0xffffffff`, constant rotations, and leading-zero results for zero and
+representative bit patterns. Rust `count_ones` lowers `llvm.ctpop.i32` to
+`cntb`, `sumb`, and `xshw`; its native object is assembled and inspected, and
+emulator results cover zero, one, the high bit, mixed byte patterns, and all
+ones when using an emulator build that implements `sumb`. See
+`docs/validation.md` for the pinned emulator's `sumb` limitation.
+Rust `trailing_zeros` lowers the defined-zero `cttz.i32` form through a native
+SPU compare/negate/and/`clz` sequence; zero is explicitly corrected to 32.
+Emulator tests cover zero, low and high bits, and mixed patterns.
 
 ## Milestone 2: scalar entry image
 
@@ -48,9 +62,11 @@ multiplication support.
 ## Future milestones
 
 4. Port and modernize LLVM's historical CellSPU backend, then integrate it
-   with Rust's LLVM backend. Revisit a GCC codegen adapter only if a concrete
-   cross-`libgccjit` build proves it can create SPU objects. Preserve historical
-   LLVM tests and add Rust ABI tests as backend support grows.
+   with Rust's LLVM backend. The GCC 9.5 cross-`libgccjit` object smoke has
+   proved that backend can create SPU objects; advancing the alternative Rust
+   adapter now requires a library compatible with the current GCC codegen
+   plugin API, then Rust ABI tests. Preserve historical LLVM tests as backend
+   support grows.
 5. Define and implement a Rust SPU target specification, full calling
    convention and data layout, relocations, stack frames, memory operations,
    and linker support; build `core` with `#![no_std]` and `panic=abort`.

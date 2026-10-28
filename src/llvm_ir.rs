@@ -23,7 +23,7 @@ struct Instruction {
     rhs: Operand,
 }
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum Operand {
     Value(String),
     Constant(i32),
@@ -38,7 +38,15 @@ enum ReturnType {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
     Binary(BinaryOp),
+    Unary(UnaryOp),
     Compare(Predicate),
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum UnaryOp {
+    CountLeadingZeros,
+    CountTrailingZeros,
+    CountOnes,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -52,6 +60,8 @@ enum BinaryOp {
     Shl,
     LShr,
     AShr,
+    RotateLeft,
+    RotateRight,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -171,6 +181,7 @@ fn parse_scalar_function(module: &str) -> Result<Function, String> {
             }
             let output_type = match instruction.op {
                 Operation::Binary(_) => ReturnType::I32,
+                Operation::Unary(_) => ReturnType::I32,
                 Operation::Compare(_) => ReturnType::Bool,
             };
             if output_type == ReturnType::Bool && return_type != ReturnType::Bool {
@@ -370,6 +381,38 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
     if !is_llvm_local(result) {
         return Err(format!("unsupported LLVM result name {result:?}"));
     }
+    if let Some((op, operand)) = parse_ctlz(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Unary(op),
+            lhs: operand,
+            rhs: Operand::Constant(0),
+        });
+    }
+    if let Some(operand) = parse_cttz(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Unary(UnaryOp::CountTrailingZeros),
+            lhs: operand,
+            rhs: Operand::Constant(0),
+        });
+    }
+    if let Some(operand) = parse_ctpop(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Unary(UnaryOp::CountOnes),
+            lhs: operand,
+            rhs: Operand::Constant(0),
+        });
+    }
+    if let Some((op, lhs, rhs)) = parse_funnel_shift(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Binary(op),
+            lhs,
+            rhs,
+        });
+    }
     let mut fields = expression.split_whitespace();
     let mnemonic = fields.next().unwrap_or_default();
     let operation = if mnemonic == "icmp" {
@@ -446,6 +489,154 @@ fn parse_operand(value: &str) -> Result<Operand, String> {
         .ok_or_else(|| format!("unsupported i32 operand {value:?}"))
 }
 
+fn parse_funnel_shift(expression: &str) -> Result<Option<(BinaryOp, Operand, Operand)>, String> {
+    let (intrinsic, op) = if expression.contains("@llvm.fshl.i32") {
+        ("@llvm.fshl.i32", BinaryOp::RotateLeft)
+    } else if expression.contains("@llvm.fshr.i32") {
+        ("@llvm.fshr.i32", BinaryOp::RotateRight)
+    } else {
+        return Ok(None);
+    };
+    let name_start = expression
+        .find(intrinsic)
+        .ok_or("LLVM funnel-shift intrinsic name is missing")?;
+    let open = expression[name_start + intrinsic.len()..]
+        .find('(')
+        .map(|offset| name_start + intrinsic.len() + offset)
+        .ok_or("LLVM funnel-shift argument list is missing")?;
+    let close = expression[open + 1..]
+        .find(')')
+        .map(|offset| open + 1 + offset)
+        .ok_or("LLVM funnel-shift argument list is unterminated")?;
+    let arguments = expression[open + 1..close]
+        .split(',')
+        .map(|argument| {
+            let fields = argument.split_whitespace().collect::<Vec<_>>();
+            if !fields.contains(&"i32") {
+                return Err("LLVM funnel-shift arguments must be i32".to_owned());
+            }
+            let value = fields
+                .last()
+                .ok_or_else(|| "LLVM funnel-shift argument is missing".to_owned())?;
+            parse_operand(value)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if arguments.len() != 3 {
+        return Err(format!(
+            "LLVM funnel-shift intrinsic requires three operands; found {}",
+            arguments.len()
+        ));
+    }
+    if arguments[0] != arguments[1] {
+        return Err("only rotate forms with identical funnel-shift inputs are supported".into());
+    }
+    Ok(Some((op, arguments[0].clone(), arguments[2].clone())))
+}
+
+fn parse_ctlz(expression: &str) -> Result<Option<(UnaryOp, Operand)>, String> {
+    let intrinsic = "@llvm.ctlz.i32";
+    let Some(name_start) = expression.find(intrinsic) else {
+        return Ok(None);
+    };
+    let open = expression[name_start + intrinsic.len()..]
+        .find('(')
+        .map(|offset| name_start + intrinsic.len() + offset)
+        .ok_or("LLVM ctlz argument list is missing")?;
+    let close = expression[open + 1..]
+        .find(')')
+        .map(|offset| open + 1 + offset)
+        .ok_or("LLVM ctlz argument list is unterminated")?;
+    let arguments = expression[open + 1..close]
+        .split(',')
+        .map(|argument| {
+            let fields = argument.split_whitespace().collect::<Vec<_>>();
+            let ty = if fields.contains(&"i32") {
+                "i32"
+            } else if fields.contains(&"i1") {
+                "i1"
+            } else {
+                return Err("LLVM ctlz argument type is unsupported".to_owned());
+            };
+            let value = fields
+                .last()
+                .ok_or_else(|| "LLVM ctlz argument is missing".to_owned())?;
+            Ok((ty, *value))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    if arguments.len() != 2 || arguments[0].0 != "i32" || arguments[1].0 != "i1" {
+        return Err("LLVM ctlz requires an i32 value and an i1 zero-undef flag".into());
+    }
+    if arguments[1].1 != "false" {
+        return Err("only defined-zero LLVM ctlz semantics are supported".into());
+    }
+    Ok(Some((
+        UnaryOp::CountLeadingZeros,
+        parse_operand(arguments[0].1)?,
+    )))
+}
+
+fn parse_cttz(expression: &str) -> Result<Option<Operand>, String> {
+    let intrinsic = "@llvm.cttz.i32";
+    let Some(name_start) = expression.find(intrinsic) else {
+        return Ok(None);
+    };
+    let open = expression[name_start + intrinsic.len()..]
+        .find('(')
+        .map(|offset| name_start + intrinsic.len() + offset)
+        .ok_or("LLVM cttz argument list is missing")?;
+    let close = expression[open + 1..]
+        .find(')')
+        .map(|offset| open + 1 + offset)
+        .ok_or("LLVM cttz argument list is unterminated")?;
+    let arguments = expression[open + 1..close]
+        .split(',')
+        .map(|argument| {
+            let fields = argument.split_whitespace().collect::<Vec<_>>();
+            let ty = if fields.contains(&"i32") {
+                "i32"
+            } else if fields.contains(&"i1") {
+                "i1"
+            } else {
+                return Err("LLVM cttz argument type is unsupported".to_owned());
+            };
+            let value = fields
+                .last()
+                .ok_or_else(|| "LLVM cttz argument is missing".to_owned())?;
+            Ok((ty, *value))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    if arguments.len() != 2 || arguments[0].0 != "i32" || arguments[1].0 != "i1" {
+        return Err("LLVM cttz requires an i32 value and an i1 zero-undef flag".into());
+    }
+    if arguments[1].1 != "false" {
+        return Err("only defined-zero LLVM cttz semantics are supported".into());
+    }
+    Ok(Some(parse_operand(arguments[0].1)?))
+}
+
+fn parse_ctpop(expression: &str) -> Result<Option<Operand>, String> {
+    let intrinsic = "@llvm.ctpop.i32";
+    let Some(name_start) = expression.find(intrinsic) else {
+        return Ok(None);
+    };
+    let open = expression[name_start + intrinsic.len()..]
+        .find('(')
+        .map(|offset| name_start + intrinsic.len() + offset)
+        .ok_or("LLVM ctpop argument list is missing")?;
+    let close = expression[open + 1..]
+        .find(')')
+        .map(|offset| open + 1 + offset)
+        .ok_or("LLVM ctpop argument list is unterminated")?;
+    let fields = expression[open + 1..close]
+        .split_whitespace()
+        .collect::<Vec<_>>();
+    if !fields.contains(&"i32") {
+        return Err("LLVM ctpop requires an i32 value".into());
+    }
+    let value = fields.last().ok_or("LLVM ctpop argument is missing")?;
+    Ok(Some(parse_operand(value)?))
+}
+
 pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
     // Preserve inputs in ABI argument registers and keep computed values in
     // caller-saved registers. A last-use pass lets linear code reuse dead temps.
@@ -471,6 +662,11 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
     let mut next_temp = first_temp;
     for (index, instruction) in function.instructions.iter().enumerate() {
         let needs_constant_register = match (instruction.op, &instruction.lhs, &instruction.rhs) {
+            (
+                Operation::Binary(BinaryOp::RotateLeft | BinaryOp::RotateRight),
+                Operand::Value(_),
+                Operand::Constant(_),
+            ) => false,
             (Operation::Binary(op), Operand::Value(_), Operand::Constant(value)) => {
                 !immediate_is_encodable(op, *value, false)
             }
@@ -506,10 +702,39 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     .get(rhs)
                     .ok_or_else(|| format!("unknown SPU value {rhs}"))?;
                 match instruction.op {
+                    Operation::Unary(UnaryOp::CountLeadingZeros) => {
+                        operations.push(format!("clz ${dst},${lhs_reg}"));
+                    }
+                    Operation::Unary(UnaryOp::CountTrailingZeros) => {
+                        operations.extend(lower_trailing_zeros(
+                            dst,
+                            lhs_reg,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Unary(UnaryOp::CountOnes) => {
+                        operations.extend([
+                            format!("cntb ${dst},${lhs_reg}"),
+                            format!("sumb ${dst},${dst},${dst}"),
+                            format!("xshw ${dst},${dst}"),
+                        ]);
+                    }
                     Operation::Binary(op @ (BinaryOp::LShr | BinaryOp::AShr)) => {
                         let count_is_dead = last_use.get(rhs_name) == Some(&index);
                         operations.extend(lower_variable_shift(
                             op,
+                            dst,
+                            lhs_reg,
+                            rhs_reg,
+                            count_is_dead,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Binary(BinaryOp::RotateRight) => {
+                        let count_is_dead = last_use.get(rhs_name) == Some(&index);
+                        operations.extend(lower_variable_rotate_right(
                             dst,
                             lhs_reg,
                             rhs_reg,
@@ -549,6 +774,27 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     .get(value)
                     .ok_or_else(|| format!("unknown SPU value {value}"))?;
                 match instruction.op {
+                    Operation::Unary(UnaryOp::CountLeadingZeros) => {
+                        operations.push(format!("clz ${dst},${source}"));
+                    }
+                    Operation::Unary(UnaryOp::CountTrailingZeros) => {
+                        operations.extend(lower_trailing_zeros(
+                            dst,
+                            source,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Unary(UnaryOp::CountOnes) => {
+                        operations.extend([
+                            format!("cntb ${dst},${source}"),
+                            format!("sumb ${dst},${dst},${dst}"),
+                            format!("xshw ${dst},${dst}"),
+                        ]);
+                    }
+                    Operation::Binary(op @ (BinaryOp::RotateLeft | BinaryOp::RotateRight)) => {
+                        operations.push(lower_rotate_immediate(op, dst, source, *constant));
+                    }
                     Operation::Binary(op) if immediate_is_encodable(op, *constant, false) => {
                         operations.push(lower_immediate(op, dst, source, *constant, false)?);
                     }
@@ -584,6 +830,25 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     .get(value)
                     .ok_or_else(|| format!("unknown SPU value {value}"))?;
                 match instruction.op {
+                    Operation::Unary(_) => {
+                        return Err("unary SPU instruction received a constant value".into())
+                    }
+                    Operation::Binary(op @ (BinaryOp::RotateLeft | BinaryOp::RotateRight)) => {
+                        operations.extend(materialize_i32(dst, *constant));
+                        if op == BinaryOp::RotateLeft {
+                            operations.push(format!("rot ${dst},${dst},${source}"));
+                        } else {
+                            let count_is_dead = last_use.get(value) == Some(&index);
+                            operations.extend(lower_variable_rotate_right(
+                                dst,
+                                dst,
+                                source,
+                                count_is_dead,
+                                &mut next_temp,
+                                &mut free_temps,
+                            )?);
+                        }
+                    }
                     Operation::Binary(op) if immediate_is_encodable(op, *constant, true) => {
                         operations.push(lower_immediate(op, dst, source, *constant, true)?);
                     }
@@ -625,9 +890,30 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                 }
             }
             (Operand::Constant(lhs), Operand::Constant(rhs)) => match instruction.op {
+                Operation::Unary(UnaryOp::CountLeadingZeros) => {
+                    operations.extend(materialize_i32(dst, (*lhs as u32).leading_zeros() as i32));
+                }
+                Operation::Unary(UnaryOp::CountTrailingZeros) => {
+                    operations.extend(materialize_i32(dst, (*lhs as u32).trailing_zeros() as i32));
+                }
+                Operation::Unary(UnaryOp::CountOnes) => {
+                    operations.extend(materialize_i32(dst, (*lhs as u32).count_ones() as i32));
+                }
                 Operation::Compare(predicate) => {
                     let result = evaluate_predicate(predicate, *lhs, *rhs) as i32;
                     operations.extend(materialize_i32(dst, result));
+                }
+                Operation::Binary(BinaryOp::RotateLeft) => {
+                    operations.extend(materialize_i32(
+                        dst,
+                        (*lhs as u32).rotate_left(*rhs as u32) as i32,
+                    ));
+                }
+                Operation::Binary(BinaryOp::RotateRight) => {
+                    operations.extend(materialize_i32(
+                        dst,
+                        (*lhs as u32).rotate_right(*rhs as u32) as i32,
+                    ));
                 }
                 Operation::Binary(_) => {
                     return Err("constant-only binary operations are not supported".into())
@@ -702,6 +988,9 @@ fn lower_immediate(
         BinaryOp::Shl => "shli",
         BinaryOp::LShr => "rotmi",
         BinaryOp::AShr => "rotmai",
+        BinaryOp::RotateLeft | BinaryOp::RotateRight => {
+            return Err("SPU rotate immediates use the dedicated lowering path".into())
+        }
     };
     let immediate = match op {
         BinaryOp::LShr | BinaryOp::AShr => -immediate,
@@ -713,6 +1002,9 @@ fn lower_immediate(
 }
 
 fn immediate_value(op: BinaryOp, value: i32, constant_is_lhs: bool) -> Option<i32> {
+    if matches!(op, BinaryOp::RotateLeft | BinaryOp::RotateRight) {
+        return None;
+    }
     if op == BinaryOp::Mul {
         return None;
     }
@@ -768,6 +1060,10 @@ fn lower_binary_register(
         BinaryOp::Or => format!("or ${destination},${lhs},${rhs}"),
         BinaryOp::Xor => format!("xor ${destination},${lhs},${rhs}"),
         BinaryOp::Shl => format!("shl ${destination},${lhs},${rhs}"),
+        BinaryOp::RotateLeft => format!("rot ${destination},${lhs},${rhs}"),
+        BinaryOp::RotateRight => {
+            return Err("variable right rotations require a negated count register".into())
+        }
         BinaryOp::LShr | BinaryOp::AShr => {
             return Err("variable right shifts require a negated count register".into())
         }
@@ -851,6 +1147,74 @@ fn lower_variable_shift(
     let operations = vec![
         format!("sfi ${negated_count},${count},0"),
         format!("{shift} ${destination},${source},${negated_count}"),
+    ];
+    if scratch {
+        free_temps.insert(negated_count);
+    }
+    Ok(operations)
+}
+
+fn lower_trailing_zeros(
+    destination: usize,
+    source: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    let error = "trailing_zeros needs two additional caller-saved SPU registers";
+    let zero_mask = allocate_scratch(next_temp, free_temps).map_err(|_| error)?;
+    let negated = match allocate_scratch(next_temp, free_temps) {
+        Ok(register) => register,
+        Err(_) => {
+            free_temps.insert(zero_mask);
+            return Err(error.into());
+        }
+    };
+    let operations = vec![
+        format!("ceqi ${zero_mask},${source},0"),
+        format!("sfi ${negated},${source},0"),
+        format!("and ${negated},${source},${negated}"),
+        format!("clz ${destination},${negated}"),
+        format!("sfi ${destination},${destination},31"),
+        format!("andi ${zero_mask},${zero_mask},33"),
+        format!("a ${destination},${destination},${zero_mask}"),
+    ];
+    free_temps.insert(zero_mask);
+    free_temps.insert(negated);
+    Ok(operations)
+}
+
+fn lower_rotate_immediate(op: BinaryOp, destination: usize, source: usize, count: i32) -> String {
+    let count = (count as u32 & 31) as i32;
+    let count = if op == BinaryOp::RotateRight {
+        -count
+    } else {
+        count
+    };
+    format!("roti ${destination},${source},{count}")
+}
+
+fn lower_variable_rotate_right(
+    destination: usize,
+    source: usize,
+    count: usize,
+    count_is_dead: bool,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    let (negated_count, scratch) = if count_is_dead && count != source {
+        (count, false)
+    } else if let Some(temp) = free_temps.pop_first() {
+        (temp, true)
+    } else if *next_temp < 80 {
+        let temp = *next_temp;
+        *next_temp += 1;
+        (temp, true)
+    } else {
+        return Err("variable right rotation needs an extra caller-saved SPU register".into());
+    };
+    let operations = vec![
+        format!("sfi ${negated_count},${count},0"),
+        format!("rot ${destination},${source},${negated_count}"),
     ];
     if scratch {
         free_temps.insert(negated_count);
@@ -999,6 +1363,30 @@ mod tests {
         )
     }
 
+    fn rotate_ir(intrinsic: &str, count: &str) -> String {
+        format!(
+            "define noundef i32 @f(i32 noundef %a, i32 noundef %count) {{\nstart:\n  %rotated = tail call noundef i32 @llvm.{intrinsic}.i32(i32 %a, i32 %a, i32 {count})\n  ret i32 %rotated\n}}\n"
+        )
+    }
+
+    fn leading_zeros_ir(zero_undef: &str) -> String {
+        format!(
+            "define noundef range(i32 0, 33) i32 @f(i32 noundef %a) {{\nstart:\n  %count = tail call noundef range(i32 0, 33) i32 @llvm.ctlz.i32(i32 %a, i1 {zero_undef})\n  ret i32 %count\n}}\n"
+        )
+    }
+
+    fn trailing_zeros_ir(zero_undef: &str) -> String {
+        format!(
+            "define noundef range(i32 0, 33) i32 @f(i32 noundef %a) {{\nstart:\n  %count = tail call noundef range(i32 0, 33) i32 @llvm.cttz.i32(i32 %a, i1 {zero_undef})\n  ret i32 %count\n}}\n"
+        )
+    }
+
+    fn count_ones_ir(value: &str) -> String {
+        format!(
+            "define noundef i32 @f(i32 noundef %a) {{\nstart:\n  %count = tail call noundef i32 @llvm.ctpop.i32(i32 {value})\n  ret i32 %count\n}}\n"
+        )
+    }
+
     #[test]
     fn lowers_add_using_the_spu_c_abi_registers() {
         let function = parse_single_i32_binary_function(&ir("add", "%b, %a")).unwrap();
@@ -1126,6 +1514,110 @@ mod tests {
             let function = parse_single_i32_binary_function(&one_param_ir(op, "%a, 5")).unwrap();
             assert!(lower_to_spu_assembly(&function).unwrap().contains(expected));
         }
+    }
+
+    #[test]
+    fn lowers_rust_rotate_intrinsics_to_spu_rotate_instructions() {
+        let left = parse_single_i32_binary_function(&rotate_ir("fshl", "%count")).unwrap();
+        let left_assembly = lower_to_spu_assembly(&left).unwrap();
+        assert!(left_assembly.contains("rot $3,$3,$4"), "{left_assembly}");
+
+        let right = parse_single_i32_binary_function(&rotate_ir("fshr", "%count")).unwrap();
+        let right_assembly = lower_to_spu_assembly(&right).unwrap();
+        assert!(
+            right_assembly.contains("sfi $4,$4,0\n  lnop\n  rot $3,$3,$4"),
+            "{right_assembly}"
+        );
+    }
+
+    #[test]
+    fn right_rotation_preserves_a_live_count_and_handles_an_aliased_count() {
+        let live_count = "define i32 @f(i32 %a, i32 %count) {\n  %rotated = call i32 @llvm.fshr.i32(i32 %a, i32 %a, i32 %count)\n  %result = xor i32 %rotated, %count\n  ret i32 %result\n}\n";
+        let function = parse_single_i32_binary_function(live_count).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(
+            assembly.contains("sfi $6,$4,0\n  lnop\n  rot $5,$3,$6\n  lnop\n  xor $3,$4,$5"),
+            "{assembly}"
+        );
+
+        let aliased_count = "define i32 @f(i32 %a) {\n  %rotated = call i32 @llvm.fshr.i32(i32 %a, i32 %a, i32 %a)\n  ret i32 %rotated\n}\n";
+        let function = parse_single_i32_binary_function(aliased_count).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(
+            assembly.contains("sfi $4,$3,0\n  lnop\n  rot $3,$3,$4"),
+            "{assembly}"
+        );
+    }
+
+    #[test]
+    fn lowers_rotate_intrinsics_with_constant_counts_to_roti() {
+        for (intrinsic, count, expected) in [
+            ("fshl", "5", "roti $3,$3,5"),
+            ("fshr", "5", "roti $3,$3,-5"),
+            ("fshl", "33", "roti $3,$3,1"),
+            ("fshr", "33", "roti $3,$3,-1"),
+        ] {
+            let function = parse_single_i32_binary_function(&rotate_ir(intrinsic, count)).unwrap();
+            let assembly = lower_to_spu_assembly(&function).unwrap();
+            assert!(assembly.contains(expected), "{expected}:\n{assembly}");
+        }
+    }
+
+    #[test]
+    fn rejects_funnel_shifts_that_are_not_rotations() {
+        let module = "define i32 @f(i32 %a, i32 %b, i32 %count) {\n  %x = call i32 @llvm.fshl.i32(i32 %a, i32 %b, i32 %count)\n  ret i32 %x\n}\n";
+        assert!(parse_single_i32_binary_function(module)
+            .unwrap_err()
+            .contains("identical funnel-shift inputs"));
+    }
+
+    #[test]
+    fn lowers_rust_leading_zeros_to_the_spu_clz_instruction() {
+        let function = parse_single_i32_binary_function(&leading_zeros_ir("false")).unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&function).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  clz $3,$3\n  bi $0\n.size f,.-f\n"
+        );
+    }
+
+    #[test]
+    fn rejects_undefined_zero_behavior_for_clz() {
+        assert!(parse_single_i32_binary_function(&leading_zeros_ir("true"))
+            .unwrap_err()
+            .contains("defined-zero"));
+    }
+
+    #[test]
+    fn lowers_rust_trailing_zeros_and_handles_defined_zero() {
+        let function = parse_single_i32_binary_function(&trailing_zeros_ir("false")).unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&function).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  ceqi $4,$3,0\n  lnop\n  sfi $5,$3,0\n  lnop\n  and $5,$3,$5\n  lnop\n  clz $3,$5\n  lnop\n  sfi $3,$3,31\n  lnop\n  andi $4,$4,33\n  lnop\n  a $3,$3,$4\n  bi $0\n.size f,.-f\n"
+        );
+    }
+
+    #[test]
+    fn rejects_undefined_zero_behavior_for_cttz() {
+        assert!(parse_single_i32_binary_function(&trailing_zeros_ir("true"))
+            .unwrap_err()
+            .contains("defined-zero"));
+    }
+
+    #[test]
+    fn lowers_rust_count_ones_to_spu_bit_count_sequence() {
+        let function = parse_single_i32_binary_function(&count_ones_ir("%a")).unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&function).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  cntb $3,$3\n  lnop\n  sumb $3,$3,$3\n  lnop\n  xshw $3,$3\n  bi $0\n.size f,.-f\n"
+        );
+    }
+
+    #[test]
+    fn folds_constant_count_ones() {
+        let function = parse_single_i32_binary_function(&count_ones_ir("-1")).unwrap();
+        assert!(lower_to_spu_assembly(&function)
+            .unwrap()
+            .contains("il $3,32\n  bi $0"));
     }
 
     #[test]

@@ -77,6 +77,13 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("wrapping_shl_const_u32", "shli\t$3,$3,5"),
         ("wrapping_shr_const_u32", "rotmi\t$3,$3,-5"),
         ("wrapping_shr_const_i32", "rotmai\t$3,$3,-5"),
+        ("rotate_left_u32", "rot\t$3,$3,$4"),
+        ("rotate_right_u32", "rot\t$3,$3,$4"),
+        ("rotate_left_const_u32", "roti\t$3,$3,5"),
+        ("rotate_right_const_u32", "roti\t$3,$3,27"),
+        ("leading_zeros_u32", "clz\t$3,$3"),
+        ("trailing_zeros_u32", "ceqi\t$4,$3,0"),
+        ("count_ones_u32", "cntb\t$3,$3"),
         ("cmp_eq_u32", "ceq\t$3,$3,$4"),
         ("cmp_ne_u32", "nor\t$3,$3,$3"),
         ("cmp_slt_i32", "cgt\t$3,$4,$3"),
@@ -212,6 +219,35 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
                     &format!("{shift}\t$3,$3,$5"),
                 ],
                 name,
+            );
+        }
+        if name == "rotate_right_u32" {
+            assert_in_order(
+                &disassembly,
+                &["sfi\t$4,$4,0", "lnop", "rot\t$3,$3,$4", "bi\t$0"],
+                "rotate_right_u32",
+            );
+        }
+        if name == "count_ones_u32" {
+            assert_in_order(
+                &disassembly,
+                &["cntb\t$3,$3", "sumb\t$3,$3,$3", "xshw\t$3,$3"],
+                "count_ones_u32",
+            );
+        }
+        if name == "trailing_zeros_u32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "ceqi\t$4,$3,0",
+                    "sfi\t$5,$3,0",
+                    "and\t$5,$3,$5",
+                    "clz\t$3,$5",
+                    "sfi\t$3,$3,31",
+                    "andi\t$4,$4,33",
+                    "a\t$3,$3,$4",
+                ],
+                "trailing_zeros_u32",
             );
         }
         if name.starts_with("cmp_") {

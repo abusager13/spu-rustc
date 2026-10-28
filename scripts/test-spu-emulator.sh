@@ -113,6 +113,76 @@ run_case wrapping-logical-right-shift "$tmp/wrapping_shr_u32.elf" 40000000
 compile_entry wrapping_shr_i32 0x80000000,1
 run_case wrapping-arithmetic-right-shift "$tmp/wrapping_shr_i32.elf" c0000000
 
+compile_entry rotate_left_u32 0x80000001,0
+run_case rotate-left-count-0 "$tmp/rotate_left_u32.elf" 80000001
+compile_entry rotate_left_u32 0x80000001,1
+run_case rotate-left-count-1 "$tmp/rotate_left_u32.elf" 00000003
+compile_entry rotate_left_u32 0x80000001,31
+run_case rotate-left-count-31 "$tmp/rotate_left_u32.elf" c0000000
+compile_entry rotate_left_u32 0x80000001,32
+run_case rotate-left-count-32 "$tmp/rotate_left_u32.elf" 80000001
+compile_entry rotate_left_u32 0x80000001,33
+run_case rotate-left-count-33 "$tmp/rotate_left_u32.elf" 00000003
+compile_entry rotate_left_u32 0x80000001,0xffffffff
+run_case rotate-left-high-count "$tmp/rotate_left_u32.elf" c0000000
+
+compile_entry rotate_right_u32 0x80000001,0
+run_case rotate-right-count-0 "$tmp/rotate_right_u32.elf" 80000001
+compile_entry rotate_right_u32 0x80000001,1
+run_case rotate-right-count-1 "$tmp/rotate_right_u32.elf" c0000000
+compile_entry rotate_right_u32 0x80000001,31
+run_case rotate-right-count-31 "$tmp/rotate_right_u32.elf" 00000003
+compile_entry rotate_right_u32 0x80000001,32
+run_case rotate-right-count-32 "$tmp/rotate_right_u32.elf" 80000001
+compile_entry rotate_right_u32 0x80000001,33
+run_case rotate-right-count-33 "$tmp/rotate_right_u32.elf" c0000000
+compile_entry rotate_right_u32 0x80000001,0xffffffff
+run_case rotate-right-high-count "$tmp/rotate_right_u32.elf" 00000003
+
+compile_entry rotate_left_const_u32 0x80000001
+run_case rotate-left-constant "$tmp/rotate_left_const_u32.elf" 00000030
+compile_entry rotate_right_const_u32 0x80000001
+run_case rotate-right-constant "$tmp/rotate_right_const_u32.elf" 0c000000
+
+compile_entry leading_zeros_u32 0
+run_case leading-zeros-zero "$tmp/leading_zeros_u32.elf" 00000020
+compile_entry leading_zeros_u32 1
+run_case leading-zeros-one "$tmp/leading_zeros_u32.elf" 0000001f
+compile_entry leading_zeros_u32 0x80000000
+run_case leading-zeros-top-bit "$tmp/leading_zeros_u32.elf" 00000000
+compile_entry leading_zeros_u32 0x00100000
+run_case leading-zeros-interior-bit "$tmp/leading_zeros_u32.elf" 0000000b
+compile_entry leading_zeros_u32 0xffffffff
+run_case leading-zeros-all-ones "$tmp/leading_zeros_u32.elf" 00000000
+
+compile_entry trailing_zeros_u32 0
+run_case trailing-zeros-zero "$tmp/trailing_zeros_u32.elf" 00000020
+compile_entry trailing_zeros_u32 1
+run_case trailing-zeros-one "$tmp/trailing_zeros_u32.elf" 00000000
+compile_entry trailing_zeros_u32 8
+run_case trailing-zeros-eight "$tmp/trailing_zeros_u32.elf" 00000003
+compile_entry trailing_zeros_u32 0x80000000
+run_case trailing-zeros-top-bit "$tmp/trailing_zeros_u32.elf" 0000001f
+compile_entry trailing_zeros_u32 0xf0f00000
+run_case trailing-zeros-interior-bit "$tmp/trailing_zeros_u32.elf" 00000014
+compile_entry trailing_zeros_u32 0xffffffff
+run_case trailing-zeros-all-ones "$tmp/trailing_zeros_u32.elf" 00000000
+
+if [[ "${SPU_EMULATOR_HAS_SUMB:-0}" == "1" ]]; then
+    compile_entry count_ones_u32 0
+    run_case count-ones-zero "$tmp/count_ones_u32.elf" 00000000
+    compile_entry count_ones_u32 1
+    run_case count-ones-one "$tmp/count_ones_u32.elf" 00000001
+    compile_entry count_ones_u32 0x80000000
+    run_case count-ones-top-bit "$tmp/count_ones_u32.elf" 00000001
+    compile_entry count_ones_u32 0xf0f00f0f
+    run_case count-ones-alternating-bytes "$tmp/count_ones_u32.elf" 00000010
+    compile_entry count_ones_u32 0xffffffff
+    run_case count-ones-all-ones "$tmp/count_ones_u32.elf" 00000020
+else
+    echo "skipping count-ones emulator cases: set SPU_EMULATOR_HAS_SUMB=1 when the emulator implements sumb"
+fi
+
 compile_entry cmp_eq_u32 0xffffffff,0xffffffff
 run_case comparison-equal "$tmp/cmp_eq_u32.elf" 00000001
 compile_entry cmp_ne_u32 7,7

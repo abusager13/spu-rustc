@@ -114,6 +114,45 @@ in this repository.
    `0x242d2080` for `0x12345678 * 0x9abcdef0`, `0xfffffff2` for signed
    `-2 * 7`, and `0xe242d208` for `0x89abcdef * 0x12345678`; each image
    reached `stop` and wrote the expected outbound mailbox word.
+21. Added `rotate_left` and `rotate_right` lowering for Rust's LLVM funnel-shift
+   rotate forms. `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 38 unit
+   tests and all three end-to-end tests with the PS3 SPU binutils on `PATH`.
+   Object disassembly checked variable `rot` and constant `roti` instructions.
+   The emulator script passed both directions for counts 0, 1, 31, 32, 33,
+   and `0xffffffff`, plus constant five-bit rotations; each image reached
+   `stop` and wrote the expected mailbox word. The emulator verifies only this
+   tested subset, not hardware execution or other rotate instructions.
+22. Added `u32::leading_zeros` lowering from `llvm.ctlz.i32` with its
+   zero-undef flag set to false to SPU `clz`. The end-to-end object test
+   assembled and disassembled the instruction. `SPU_REQUIRE_E2E=1 cargo test
+   --offline` passed all 41 unit tests and all three end-to-end tests. The
+   emulator returned 32 for zero, 31 for one, 0 for `0x80000000` and
+   `0xffffffff`, and 11 for `0x00100000`, reaching `stop` for every image.
+23. Added `u32::count_ones` lowering from `llvm.ctpop.i32` to `cntb`, `sumb`,
+   and `xshw`. The SPU object integration test assembled and inspected that
+   sequence; the full run passed all 43 unit tests and all three end-to-end
+   tests. `spu-gcc -O1 -S` for a C `__builtin_popcount` reference emitted the
+   same three instructions. The pinned `anergistic` source returns immediately
+   for `sumb`, so count-ones emulator cases are opt-in in the script. For this
+   run, a local, temporary emulator build implemented `sumb` according to the
+   SPU ISA definition; the emulator then returned 0, 1, 1, 16, and 32 for
+   `0`, `1`, `0x80000000`, `0xf0f00f0f`, and `0xffffffff` respectively, with
+   each image reaching `stop`. That emulator patch is not in this repository.
+24. Built GCC 9.5 `libgccjit` as a host-shared library targeting `spu` outside
+   the repository and used its C API to emit a relocatable object. `spu-readelf`
+   confirmed ELF32, big endian, and machine `SPU`; `spu-objdump` showed the
+   native add instruction and SPU return. The current `rustc_codegen_gcc`
+   plugin could not load this library because GCC 9.5 lacks
+   `gcc_jit_type_get_restrict`; Rust code generation was not reached. A stock
+   nightly rustc probe with `llvm-target: spu-unknown-none` independently
+   failed because LLVM 23 has no SPU target.
+25. Added `u32::trailing_zeros` lowering for `llvm.cttz.i32` with defined-zero
+   semantics. The SPU sequence computes the low set bit, applies `clz`, and
+   corrects the zero input to 32; the object test assembled and inspected every
+   instruction. `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 45 unit tests
+   and all three end-to-end tests. The stock emulator returned 32, 0, 3, 31,
+   20, and 0 for inputs `0`, `1`, `8`, `0x80000000`, `0xf0f00000`, and
+   `0xffffffff`; each image reached `stop` and wrote the expected mailbox word.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

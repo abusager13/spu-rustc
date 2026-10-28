@@ -12,15 +12,22 @@ from the PS3 development toolchain. It does **not** add an official
 flag names the prototype's output architecture.
 
 Supported scalar functions have zero to 72 `i32` ABI parameters and straight-
-line `i32` add, subtract, wrapping multiply, bitwise, and shift operations.
-Rust `wrapping_shl` and `wrapping_shr` mask the shift count to five bits;
-signed right shifts use arithmetic semantics. Equality and signed or unsigned
-comparisons can return Rust `bool`, normalized to `0` or `1` in the SPU result
-register. Functions may also return a parameter, an operation result, or any
-32-bit literal. Immediate forms are used where supported and larger constants
-are materialized in a register. The examples include scalar operations,
-variable and constant multiplication, three- and eight-argument sums, shifts,
-and signed and unsigned comparisons.
+line `i32` add, subtract, wrapping multiply, bitwise, shift, rotate,
+`leading_zeros`, `trailing_zeros`, and `count_ones` operations. Rust
+`wrapping_shl` and `wrapping_shr` mask the shift count to five bits; signed
+right shifts use arithmetic semantics.
+`rotate_left` and `rotate_right` use the SPU rotate instructions and wrap
+counts modulo 32. `leading_zeros` uses SPU `clz`, including a result of 32 for
+zero. `trailing_zeros` expands the defined-zero LLVM intrinsic into SPU compare,
+negate, bitwise-and, and `clz` instructions, returning 32 for zero.
+`count_ones` uses SPU `cntb`, `sumb`, and `xshw` instructions.
+Equality and signed or unsigned comparisons can return Rust `bool`, normalized
+to `0` or `1` in the SPU result register. Functions may also return a
+parameter, an operation result, or any 32-bit literal. Immediate forms are
+used where supported and larger constants are materialized in a register. The
+examples include scalar operations, variable and constant multiplication and
+rotations, leading-zero and population counts, three- and eight-argument sums,
+shifts, and signed and unsigned comparisons.
 A separate minimal `_start` example can be linked to an SPU ELF executable; it
 immediately runs the native SPU `stop 0` instruction. See [`examples`](examples)
 and the design notes in [`docs`](docs).
@@ -80,10 +87,14 @@ instructions. `docs/validation.md` records the tested versions and evidence.
 ### Run the SPU emulator check
 
 The optional emulator check uses the standalone `anergistic` SPU emulator. It
-compiles and runs a Rust entry plus Rust arithmetic, bitwise, shift, and
-comparison functions. Its startup loads fixed ABI argument words, including a
-full-width constant; each result must be written to the outbound mailbox
-before the emulator reaches `stop`.
+compiles and runs a Rust entry plus Rust arithmetic, bitwise, shift, rotate,
+leading-zero, trailing-zero, and comparison functions. It checks variable
+rotate counts 0, 1, 31, 32, 33, and `0xffffffff`, constant rotations, and
+leading-zero results for zero and representative bit patterns. It checks
+trailing-zero results for zero, low and high bits, and mixed patterns. Its
+startup loads fixed ABI argument words, including a full-width constant; each
+result must be written to the outbound mailbox before the emulator reaches
+`stop`.
 
 ```sh
 git clone https://github.com/eth-man/ps3-cell-re-tools.git /tmp/ps3-cell-re-tools
@@ -98,6 +109,13 @@ The emulator is a separately downloaded GPLv2 project and is not included in
 this GPL-3.0-only repository. This check validates the emitted instructions on
 the exercised scalar path; it does not emulate the PS3 operating system, verify
 DMA or multicore behavior, or replace testing on hardware.
+
+The pinned `anergistic` commit has an unimplemented `sumb` instruction. The
+script therefore skips `count_ones` execution unless
+`SPU_EMULATOR_HAS_SUMB=1` is set for an emulator build that implements it. The
+recorded count-ones emulator run used a local emulator build with `sumb`
+implemented from the SPU ISA definition; the repository does not modify or
+include that emulator.
 
 To save generated assembly without assembling it:
 

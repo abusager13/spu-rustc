@@ -66,9 +66,21 @@ and object inspector are available without restoring LLVM first.
 The maintained SPU GCC backend is therefore the best immediate assembler and
 linker source. Directly routing current Rust LLVM IR through an old GCC target
 is not already supported, however: the PS3 toolchain configures its SPU GCC for
-C and C++, not Rust. A `rustc_codegen_gcc` integration also needs an explicit
-proof that the selected libgccjit configuration can emit a cross-target SPU
-object. That remains an open investigation.
+C and C++, not Rust. A separate host-shared GCC 9.5 `libgccjit` build configured
+for `--target=spu` did emit an ELF32 big-endian `EM_SPU` relocatable object from
+a minimal C API smoke program. This proves cross-target object generation is
+possible with that GCC backend; it does not integrate Rust.
+
+A Rust-backend probe using nightly rustc 1.101.0 and the `rustc_codegen_gcc`
+plugin stopped while loading that GCC 9.5 library: the plugin requires the
+missing `gcc_jit_type_get_restrict` symbol. No Rust code reached code
+generation. The installed PS3 GCC 9.5.0 is configured for SPU C and C++ with
+shared libraries disabled, so it does not itself provide `libgccjit`. A
+separate custom target JSON using `llvm-target: spu-unknown-none` also fails
+with the stock rustc backend before code generation because LLVM 23 has no
+registered SPU target. The pinned stable rustc 1.99.1 additionally requires
+nightly `-Z unstable-options` to parse custom target JSON. A target JSON or a
+cross-libgccjit object smoke alone therefore does not supply a Rust SPU target.
 
 The GCC 9.5 SPU [machine description](https://github.com/gcc-mirror/gcc/blob/releases/gcc-9.5.0/gcc/config/spu/spu.md)
 models the integer arithmetic pipe separately from `lnop`'s second pipe. Its
@@ -90,11 +102,11 @@ documented gaps.
 
 The current prototype deliberately does not try to masquerade as that backend.
 The GNU SPU toolchain remains the tested assembler/linker and ABI oracle. A
-cross-`libgccjit` adapter remains a possible fallback only if it can be made to
-emit SPU ELF files reliably; the available PS3 toolchain does not enable its
-Rust frontend or show such a libgccjit setup. A backend written from scratch
-would duplicate much of the historical LLVM work without improving this
-evidence.
+Rust GCC adapter is a concrete follow-up option because the cross-libgccjit
+object smoke succeeded, but it needs a newer or patched cross libgccjit that
+matches the current Rust backend API, followed by Rust SPU ABI and data-layout
+validation. The scalar prototype remains the only Rust-to-SPU path validated
+end to end in this repository.
 
 The target-specific Rust API will also need to distinguish local-store
 addresses from PPU effective addresses for DMA. The available SPU GCC install
@@ -111,12 +123,20 @@ The current driver:
 2. Uses host `rustc` to parse and type-check it and emit host LLVM IR.
 3. Accepts one function with zero to 72 named `i32` parameters, a straight-line
    sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
-   `ashr`, or integer comparisons. It returns a parameter, computed `i32`, Rust
-   `bool`, or 32-bit literal. Add/subtract, logic, and shift immediates are
-   used when the SPU encoding permits; multiply operands and other constants
-   are materialized in a temporary register. `icmp` supports equality plus
-   all signed and unsigned order predicates. Comparison masks are reduced to
-   Rust bool's `0` or `1`.
+   `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
+   `count_ones`, or integer comparisons. It returns a parameter, computed `i32`,
+   Rust `bool`, or 32-bit literal. Add/subtract, logic, shift, and rotate
+   immediates are used when the SPU encoding permits; multiply operands and
+   other constants are materialized in a temporary register. `icmp` supports
+   equality plus all signed and unsigned order predicates. Comparison masks
+   become Rust bool's `0` or `1`.
+   Rotate lowering accepts LLVM `fshl`/`fshr` only when the first two inputs
+   match, the form used by Rust's `rotate_left` and `rotate_right` methods.
+   `leading_zeros` accepts `llvm.ctlz.i32` only when its zero-undef flag is
+   false, then uses SPU `clz`. `trailing_zeros` accepts `llvm.cttz.i32` only
+   with defined-zero semantics, then expands to `ceqi`, `sfi`, `and`, and
+   `clz` instructions with a correction that makes zero return 32. `count_ones`
+   accepts `llvm.ctpop.i32` and uses `cntb`, `sumb`, and `xshw`.
 4. Assigns parameters to C ABI registers `$3` through `$74`, uses caller-saved
    registers `$3` through `$79` for computed values, and reuses temporary
    registers after each value's last use. It expands 32-bit multiplication
@@ -136,12 +156,16 @@ The current driver:
 
 The host LLVM data layout is ignored. This is valid only for the currently
 accepted register-only `i32` operations and `i1` comparison results. Rust
-wrapping shifts apply the LLVM-emitted `and 31` before shifting. The SPU's
-logical and arithmetic right-shift instructions consume a negated count, so
-the lowering either negates a count at its last use or reserves a temporary
-register when the value stays live. Comparisons convert SPU's all-ones true
-mask into the C ABI's zero-extended Rust bool value. The prototype rejects
-pointers, loads, stores, calls, control flow, other integer widths, most
+wrapping shifts apply the LLVM-emitted `and 31` before shifting. SPU word
+rotations use the low five bits of the count; variable right rotation negates
+the count before `rot`, and immediate rotations use `roti`. Emulator checks
+cover counts around the modulo-32 boundary, but this does not validate other
+SPU rotate variants. The SPU's logical and arithmetic right-shift instructions
+consume a negated count, so the lowering either negates a count at its last use
+or reserves a temporary register when the value stays live. Comparisons
+convert SPU's all-ones true mask into the C ABI's zero-extended Rust bool
+value. The prototype rejects
+pointers, loads, stores, control flow, other calls, other integer widths, most
 constant-only binary operations, and additional functions. Straight-line
 sequences reuse caller-saved temporary registers after their last use and are
 rejected when simultaneously live values exceed the available registers. The
