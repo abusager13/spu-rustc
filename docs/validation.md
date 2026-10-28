@@ -153,6 +153,15 @@ in this repository.
    and all three end-to-end tests. The stock emulator returned 32, 0, 3, 31,
    20, and 0 for inputs `0`, `1`, `8`, `0x80000000`, `0xf0f00000`, and
    `0xffffffff`; each image reached `stop` and wrote the expected mailbox word.
+26. Added emulator-covered `u32::leading_ones` and `u32::trailing_ones` examples.
+   rustc emits a bitwise complement followed by `ctlz.i32` or `cttz.i32`; the
+   existing count lowering handles both without a new SPU instruction. The
+   object integration test checked those instruction sequences. The full run
+   passed all 45 unit tests and all three end-to-end tests, and the stock
+   emulator returned 0, 1, 4, and 32 for leading-one inputs `0`,
+   `0x80000000`, `0xf0f00000`, and `0xffffffff`; it returned 0, 1, 2, 0, and
+   32 for trailing-one inputs `0`, `1`, `3`, `0x80000000`, and `0xffffffff`.
+   Each image reached `stop` and wrote the expected mailbox word.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

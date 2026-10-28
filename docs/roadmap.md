@@ -34,7 +34,10 @@ ones when using an emulator build that implements `sumb`. See
 `docs/validation.md` for the pinned emulator's `sumb` limitation.
 Rust `trailing_zeros` lowers the defined-zero `cttz.i32` form through a native
 SPU compare/negate/and/`clz` sequence; zero is explicitly corrected to 32.
-Emulator tests cover zero, low and high bits, and mixed patterns.
+Emulator tests cover zero, low and high bits, and mixed patterns. Rust
+`leading_ones` and `trailing_ones` compile to a bitwise complement followed by
+the respective zero-count path, and their zero and boundary cases also pass in
+the emulator.
 
 ## Milestone 2: scalar entry image
 

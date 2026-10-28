@@ -168,6 +168,26 @@ run_case trailing-zeros-interior-bit "$tmp/trailing_zeros_u32.elf" 00000014
 compile_entry trailing_zeros_u32 0xffffffff
 run_case trailing-zeros-all-ones "$tmp/trailing_zeros_u32.elf" 00000000
 
+compile_entry leading_ones_u32 0
+run_case leading-ones-zero "$tmp/leading_ones_u32.elf" 00000000
+compile_entry leading_ones_u32 0x80000000
+run_case leading-ones-top-bit "$tmp/leading_ones_u32.elf" 00000001
+compile_entry leading_ones_u32 0xf0f00000
+run_case leading-ones-interior-pattern "$tmp/leading_ones_u32.elf" 00000004
+compile_entry leading_ones_u32 0xffffffff
+run_case leading-ones-all-ones "$tmp/leading_ones_u32.elf" 00000020
+
+compile_entry trailing_ones_u32 0
+run_case trailing-ones-zero "$tmp/trailing_ones_u32.elf" 00000000
+compile_entry trailing_ones_u32 1
+run_case trailing-ones-one "$tmp/trailing_ones_u32.elf" 00000001
+compile_entry trailing_ones_u32 3
+run_case trailing-ones-low-run "$tmp/trailing_ones_u32.elf" 00000002
+compile_entry trailing_ones_u32 0x80000000
+run_case trailing-ones-top-bit-only "$tmp/trailing_ones_u32.elf" 00000000
+compile_entry trailing_ones_u32 0xffffffff
+run_case trailing-ones-all-ones "$tmp/trailing_ones_u32.elf" 00000020
+
 if [[ "${SPU_EMULATOR_HAS_SUMB:-0}" == "1" ]]; then
     compile_entry count_ones_u32 0
     run_case count-ones-zero "$tmp/count_ones_u32.elf" 00000000

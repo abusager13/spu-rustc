@@ -82,7 +82,9 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("rotate_left_const_u32", "roti\t$3,$3,5"),
         ("rotate_right_const_u32", "roti\t$3,$3,27"),
         ("leading_zeros_u32", "clz\t$3,$3"),
+        ("leading_ones_u32", "clz\t$3,$4"),
         ("trailing_zeros_u32", "ceqi\t$4,$3,0"),
+        ("trailing_ones_u32", "ceqi\t$5,$4,0"),
         ("count_ones_u32", "cntb\t$3,$3"),
         ("cmp_eq_u32", "ceq\t$3,$3,$4"),
         ("cmp_ne_u32", "nor\t$3,$3,$3"),
@@ -248,6 +250,29 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
                     "a\t$3,$3,$4",
                 ],
                 "trailing_zeros_u32",
+            );
+        }
+        if name == "leading_ones_u32" {
+            assert_in_order(
+                &disassembly,
+                &["xori\t$4,$3,-1", "clz\t$3,$4"],
+                "leading_ones_u32",
+            );
+        }
+        if name == "trailing_ones_u32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "xori\t$4,$3,-1",
+                    "ceqi\t$5,$4,0",
+                    "sfi\t$6,$4,0",
+                    "and\t$6,$4,$6",
+                    "clz\t$3,$6",
+                    "sfi\t$3,$3,31",
+                    "andi\t$5,$5,33",
+                    "a\t$3,$3,$5",
+                ],
+                "trailing_ones_u32",
             );
         }
         if name.starts_with("cmp_") {
