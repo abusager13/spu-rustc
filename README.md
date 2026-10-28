@@ -11,8 +11,9 @@ from the PS3 development toolchain. It does **not** add an official
 `rustc --target=spu-sony-ps3` target or a general Rust backend. Its `--target`
 flag names the prototype's output architecture.
 
-Supported scalar functions have zero to 75 `i32` ABI parameters: 72 in the SPU
-argument registers and up to three stack-passed arguments. They support
+Supported scalar functions have zero to 75 32-bit ABI parameters: integer
+values or pointers interpreted as 32-bit local-store addresses, with 72
+register-passed parameters and up to three stack-passed arguments. They support
 straight-line `i32` add, subtract, wrapping multiply, bitwise operations
 (including unary `!`), wrapping negation, shifts, and rotates,
 `leading_zeros`, `trailing_zeros`, `leading_ones`, `trailing_ones`, and
@@ -30,6 +31,12 @@ negate, bitwise-and, and `clz` instructions, returning 32 for zero.
 `leading_ones` and `trailing_ones` count through a bitwise complement before
 using the leading- or trailing-zero sequence. `count_ones` uses SPU `cntb`,
 `sumb`, and `xshw` instructions.
+Aligned `*const u32` and `*mut u32` parameters can read and write local-store
+words. Loads use `lqd` and `rotqby`; stores use `lqd`, `cwd`, `shufb`, and
+`stqd` to replace one word while preserving the other bytes in its quadword.
+Stores currently require a named `i32` value; constant-only stores, pointer
+arithmetic, other access widths, and other memory operations remain
+unsupported.
 `wrapping_abs` builds a sign mask with `rotmai`, then uses XOR and subtraction;
 it preserves `i32::MIN` with wrapping semantics.
 Signed and unsigned `min`/`max` use the corresponding SPU compare and `selb`
@@ -52,8 +59,8 @@ examples include scalar operations, variable and constant multiplication and
 rotations, leading/trailing zero and one counts, population counts, bit
 reversal, byte swapping, wrapping absolute value, signed and unsigned min/max,
 signed and unsigned saturating addition and subtraction, conditional
-selection, three- and eight-argument sums, shifts, and signed and unsigned
-comparisons.
+selection, three- and eight-argument sums, shifts, signed and unsigned
+comparisons, and aligned local-store word loads and stores.
 A Rust conditional expression is supported only when host `rustc` lowers it to
 straight-line LLVM `select`; general branches, loops, and `phi` nodes remain
 unsupported.
@@ -202,8 +209,10 @@ returns one word through the outbound mailbox; more than three stack arguments
 are unsupported. The experimental `--runtime-args` mode forwards at most four
 incoming 32-bit argument registers, but has not been matched to PS3's 64-bit
 thread arguments. The minimal PPU loader is build-validated only and has not
-been run; it accepts no SPU arguments. There is no SPU `core` build, SIMD API,
-local-store memory API, DMA, general mailbox API, or synchronization library.
+been run; it accepts no SPU arguments. There is no SPU `core` build or SIMD
+API, and local-store access is limited to direct aligned `u32` loads and
+stores; DMA, general mailbox operations, and synchronization remain
+unsupported.
 Hardware execution has not been tested. Details and the remaining work are in
 [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/roadmap.md).
 

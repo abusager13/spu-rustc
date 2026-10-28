@@ -69,6 +69,8 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("xor_low_bit", "xori\t$3,$3,1"),
         ("sum3_u32", "a\t$6,$3,$4"),
         ("identity_u32", "bi\t$0"),
+        ("load_u32", "rotqby\t$3,$3,$2"),
+        ("store_u32", "stqd\t$6,0($3)"),
         ("stack_arg_u32", "lqd\t$75,32($1)"),
         ("stack_args_u32", "lqd\t$77,64($1)"),
         ("constant_u32", "il\t$3,42"),
@@ -166,6 +168,32 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
                 &disassembly,
                 &["a\t$6,$3,$4", "lnop", "a\t$3,$5,$6", "bi\t$0"],
                 "sum3_u32",
+            );
+        }
+        if name == "load_u32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "ori\t$2,$3,0",
+                    "lqd\t$3,0($3)",
+                    "rotqby\t$3,$3,$2",
+                    "bi\t$0",
+                ],
+                "load_u32 local-store load",
+            );
+        }
+        if name == "store_u32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "lqd\t$2,0($3)",
+                    "cwd\t$5,0($3)",
+                    "shufb\t$6,$4,$2,$5",
+                    "stqd\t$6,0($3)",
+                    "or\t$3,$4,$4",
+                    "bi\t$0",
+                ],
+                "store_u32 local-store store",
             );
         }
         if name == "stack_arg_u32" {
@@ -957,7 +985,8 @@ fn links_runtime_argument_entry_without_overwriting_abi_registers() {
         "runtime entry accepted more than four arguments"
     );
     assert!(
-        String::from_utf8_lossy(&too_many.stderr).contains("supports at most four i32 arguments"),
+        String::from_utf8_lossy(&too_many.stderr)
+            .contains("supports at most four 32-bit scalar or address arguments"),
         "runtime argument limit was not reported clearly:\n{}",
         String::from_utf8_lossy(&too_many.stderr)
     );

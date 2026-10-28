@@ -70,6 +70,13 @@ Straight-line LLVM `select i1` with `i32` arms lowers to SPU `selb`. When an
 standalone returned Rust `bool` remains normalized to 0 or 1. This does not
 add general LLVM branches, loops, or `phi`-node support. Emulator cases cover
 both selected arms and both arms computing an arithmetic result.
+Local-store access accepts aligned `u32` loads and stores through named
+opaque-pointer parameters. Loads lower to `ori`, `lqd`, and `rotqby`; stores
+lower to `lqd`, `cwd`, `shufb`, and `stqd`, following SPU GCC's sequence for
+word addresses that may not be 16-byte aligned. The emulator preloads four
+words and checks reads and writes at all four word offsets, including that
+stores preserve neighboring words. Pointer arithmetic, other access widths,
+and general memory semantics remain unsupported.
 
 ## Milestone 2: scalar entry image
 

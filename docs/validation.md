@@ -356,6 +356,26 @@ in this repository.
    includes the runtime-register startup and `stop 0x102` thread-exit ELF
    checks. `cargo fmt --all -- --check`, `rustfmt --check --edition 2021
    ppu-loader/src/lib.rs`, and `git diff --check` also passed.
+46. Added lowering for a non-volatile, at-least-4-byte-aligned `i32` load
+   through a named opaque-pointer parameter, interpreting that pointer as a
+   32-bit SPU local-store address. The output `ori`/`lqd`/`rotqby` sequence
+   matches the sequence from `spu-gcc -O1` for a C scalar load. The native
+   object integration test passed. The emulator preloaded four big-endian
+   words at local-store address `0x1000`; register-preset addresses at offsets
+   0, 4, 8, and 12 returned `0x12345678`, `0x89abcdef`, `0xfedcba98`, and
+   `0x0badf00d` through the mailbox, with every image reaching `stop`.
+   `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 73 unit tests and all
+   five end-to-end tests. The full emulator script also passed; it still skips
+   `count_ones` on this emulator's unimplemented `sumb`.
+47. Added lowering for a non-volatile, at-least-4-byte-aligned `i32` store
+   through a named local-store pointer parameter. The `lqd`/`cwd`/`shufb`/`stqd`
+   sequence matches `spu-gcc -O1` for a C reference store, and the integration
+   test assembles and checks its instructions. `SPU_REQUIRE_E2E=1 cargo test
+   --offline` passed all 75 unit tests and all five end-to-end tests. The
+   emulator returned the stored value and wrote `0xdeadbeef` at local-store
+   offsets 0, 4, 8, and 12 while preserving the other three preloaded words
+   each time. The full script passed; `count_ones` remains skipped because
+   this emulator does not implement `sumb`.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

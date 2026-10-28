@@ -42,7 +42,16 @@ enum ReturnType {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum ValueType {
+    I32,
+    Bool,
+    LocalStorePointer,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum Operation {
+    Load,
+    Store,
     Binary(BinaryOp),
     Unary(UnaryOp),
     Compare(Predicate),
@@ -116,17 +125,18 @@ fn parse_scalar_function(module: &str) -> Result<Function, String> {
     if !signature.contains('{') {
         return Err("multi-line LLVM function signatures are not supported".into());
     }
-    let (name, params, return_type) = parse_signature(signature)?;
-    if params.len() > MAX_SUPPORTED_SCALAR_ARGUMENTS {
+    let (name, typed_params, return_type) = parse_signature(signature)?;
+    if typed_params.len() > MAX_SUPPORTED_SCALAR_ARGUMENTS {
         return Err(format!(
-            "SPU scalar lowering supports at most {MAX_SUPPORTED_SCALAR_ARGUMENTS} i32 parameters (72 register-passed and up to {MAX_SUPPORTED_STACK_ARGUMENTS} stack-passed); found {}",
-            params.len()
+            "SPU scalar lowering supports at most {MAX_SUPPORTED_SCALAR_ARGUMENTS} 32-bit scalar or local-store address parameters (72 register-passed and up to {MAX_SUPPORTED_STACK_ARGUMENTS} stack-passed); found {}",
+            typed_params.len()
         ));
     }
-    let mut value_types = params
+    let params = typed_params
         .iter()
-        .map(|param| (param.clone(), ReturnType::I32))
-        .collect::<HashMap<_, _>>();
+        .map(|(param, _)| param.clone())
+        .collect::<Vec<_>>();
+    let mut value_types = typed_params.iter().cloned().collect::<HashMap<_, _>>();
     let mut instructions = Vec::new();
     let mut returned = None;
     let mut saw_return = false;
@@ -160,7 +170,11 @@ fn parse_scalar_function(module: &str) -> Result<Function, String> {
             }
             let operand = parse_return_operand(value.trim(), return_type)?;
             if let Operand::Value(name) = &operand {
-                if value_types.get(name) != Some(&return_type) {
+                let expected_type = match return_type {
+                    ReturnType::I32 => ValueType::I32,
+                    ReturnType::Bool => ValueType::Bool,
+                };
+                if value_types.get(name) != Some(&expected_type) {
                     return Err(format!(
                         "return value {name} is undefined or has the wrong LLVM type"
                     ));
@@ -170,22 +184,75 @@ fn parse_scalar_function(module: &str) -> Result<Function, String> {
             saw_return = true;
             continue;
         }
+        if let Some(expression) = trimmed.strip_prefix("store ") {
+            if saw_return {
+                return Err("instructions after the return are not supported".into());
+            }
+            let (value, pointer) =
+                parse_store(expression)?.ok_or("unsupported LLVM store instruction")?;
+            match &pointer {
+                Operand::Value(name)
+                    if value_types.get(name) == Some(&ValueType::LocalStorePointer) => {}
+                _ => return Err("LLVM store requires a named local-store pointer parameter".into()),
+            }
+            match &value {
+                Operand::Value(name) if value_types.get(name) == Some(&ValueType::I32) => {}
+                Operand::Value(name) => {
+                    return Err(format!(
+                        "LLVM store value {name} is undefined or is not an i32"
+                    ))
+                }
+                Operand::Constant(_) => {
+                    return Err("LLVM store currently requires a named i32 value".into())
+                }
+            }
+            instructions.push(Instruction {
+                result: String::new(),
+                op: Operation::Store,
+                lhs: value,
+                rhs: pointer,
+                condition: None,
+            });
+            continue;
+        }
         if let Some((result, expression)) = trimmed.split_once(" = ") {
             if saw_return {
                 return Err("instructions after the return are not supported".into());
             }
             let instruction = parse_instruction(result.trim(), expression.trim())?;
-            for operand in [&instruction.lhs, &instruction.rhs] {
-                if let Operand::Value(name) = operand {
-                    match value_types.get(name) {
-                        Some(ReturnType::I32) => {}
-                        Some(ReturnType::Bool) => {
-                            return Err(format!(
+            if instruction.op == Operation::Load {
+                match &instruction.lhs {
+                    Operand::Value(name)
+                        if value_types.get(name) == Some(&ValueType::LocalStorePointer) => {}
+                    _ => {
+                        return Err(
+                            "LLVM load requires a named local-store pointer parameter".into()
+                        )
+                    }
+                }
+                if instruction.rhs != Operand::Constant(0) {
+                    return Err("LLVM load has an unexpected second operand".into());
+                }
+            } else {
+                for operand in [&instruction.lhs, &instruction.rhs] {
+                    if let Operand::Value(name) = operand {
+                        match value_types.get(name) {
+                            Some(ValueType::I32) => {}
+                            Some(ValueType::Bool) => {
+                                return Err(format!(
                             "LLVM value {name} is i1; bool values cannot be used as i32 operands"
                         ))
-                        }
-                        None => {
-                            return Err(format!("LLVM value {name} is used before it is defined"))
+                            }
+                            Some(ValueType::LocalStorePointer) => {
+                                return Err(format!(
+                                    "LLVM pointer value {name} can only be used by a supported load or store"
+                                ))
+                            }
+                            None => {
+                                return Err(format!(
+                                    "LLVM value {name} is used before it is defined"
+                                ))
+                            }
                         }
                     }
                 }
@@ -193,8 +260,8 @@ fn parse_scalar_function(module: &str) -> Result<Function, String> {
             if let Some(condition) = &instruction.condition {
                 match condition {
                     Operand::Value(name) => match value_types.get(name) {
-                        Some(ReturnType::Bool) => {}
-                        Some(ReturnType::I32) => {
+                        Some(ValueType::Bool) => {}
+                        Some(ValueType::I32 | ValueType::LocalStorePointer) => {
                             return Err(format!("LLVM select condition {name} is not i1"))
                         }
                         None => {
@@ -217,10 +284,12 @@ fn parse_scalar_function(module: &str) -> Result<Function, String> {
                 return Err(format!("duplicate LLVM result {}", instruction.result));
             }
             let output_type = match instruction.op {
-                Operation::Binary(_) => ReturnType::I32,
-                Operation::Unary(_) => ReturnType::I32,
-                Operation::Compare(_) => ReturnType::Bool,
-                Operation::Select => ReturnType::I32,
+                Operation::Load => ValueType::I32,
+                Operation::Store => {
+                    return Err("LLVM store cannot produce a value".into());
+                }
+                Operation::Binary(_) | Operation::Unary(_) | Operation::Select => ValueType::I32,
+                Operation::Compare(_) => ValueType::Bool,
             };
             value_types.insert(instruction.result.clone(), output_type);
             instructions.push(instruction);
@@ -285,9 +354,20 @@ fn parse_stop_entry(module: &str) -> Result<String, String> {
         .find('(')
         .map(|index| at + index)
         .ok_or("LLVM function parameter list is missing")?;
+    let mut depth = 0usize;
     let close = signature[open..]
-        .find(')')
-        .map(|index| open + index)
+        .char_indices()
+        .find_map(|(offset, character)| match character {
+            '(' => {
+                depth += 1;
+                None
+            }
+            ')' => {
+                depth -= 1;
+                (depth == 0).then_some(open + offset)
+            }
+            _ => None,
+        })
         .ok_or("LLVM function parameter list is unterminated")?;
     let name = &signature[at + 1..open];
     if name != "_start" {
@@ -345,7 +425,9 @@ fn is_stop_inline_asm(line: &str) -> bool {
     tail.starts_with("\"stop 0\",") && tail.contains("()")
 }
 
-fn parse_signature(signature: &str) -> Result<(String, Vec<String>, ReturnType), String> {
+fn parse_signature(
+    signature: &str,
+) -> Result<(String, Vec<(String, ValueType)>, ReturnType), String> {
     let at = signature
         .find('@')
         .ok_or("LLVM function name is missing @")?;
@@ -358,9 +440,20 @@ fn parse_signature(signature: &str) -> Result<(String, Vec<String>, ReturnType),
         .find('(')
         .map(|index| at + index)
         .ok_or("LLVM function parameter list is missing")?;
+    let mut depth = 0usize;
     let close = signature[open..]
-        .find(')')
-        .map(|index| open + index)
+        .char_indices()
+        .find_map(|(offset, character)| match character {
+            '(' => {
+                depth += 1;
+                None
+            }
+            ')' => {
+                depth -= 1;
+                (depth == 0).then_some(open + offset)
+            }
+            _ => None,
+        })
         .ok_or("LLVM function parameter list is unterminated")?;
     let name = &signature[at + 1..open];
     if !is_asm_identifier(name) {
@@ -369,11 +462,17 @@ fn parse_signature(signature: &str) -> Result<(String, Vec<String>, ReturnType),
     let raw_params = signature[open + 1..close].trim();
     let mut params = Vec::new();
     if !raw_params.is_empty() {
-        for param in raw_params.split(',') {
+        for param in split_top_level_commas(raw_params) {
             let param = param.trim();
-            if !param.starts_with("i32 ") {
-                return Err(format!("only named i32 parameters are supported: {param}"));
-            }
+            let param_type = match param.split_whitespace().next() {
+                Some("i32") => ValueType::I32,
+                Some("ptr") => ValueType::LocalStorePointer,
+                _ => {
+                    return Err(format!(
+                        "only named i32 and opaque local-store pointer parameters are supported: {param}"
+                    ));
+                }
+            };
             let name = param
                 .rfind('%')
                 .map(|index| &param[index..])
@@ -381,18 +480,37 @@ fn parse_signature(signature: &str) -> Result<(String, Vec<String>, ReturnType),
             if !is_llvm_local(name) {
                 return Err(format!("unsupported LLVM parameter name {name:?}"));
             }
-            if params.iter().any(|prior| prior == name) {
+            if params.iter().any(|(prior, _)| prior == name) {
                 return Err(format!("duplicate LLVM parameter name {name}"));
             }
-            params.push(name.to_owned());
+            params.push((name.to_owned(), param_type));
         }
     }
     if params.len() > MAX_SUPPORTED_SCALAR_ARGUMENTS {
         return Err(format!(
-            "SPU scalar lowering supports at most {MAX_SUPPORTED_SCALAR_ARGUMENTS} i32 parameters (72 register-passed and up to {MAX_SUPPORTED_STACK_ARGUMENTS} stack-passed)"
+            "SPU scalar lowering supports at most {MAX_SUPPORTED_SCALAR_ARGUMENTS} 32-bit scalar or local-store address parameters (72 register-passed and up to {MAX_SUPPORTED_STACK_ARGUMENTS} stack-passed)"
         ));
     }
     Ok((name.to_owned(), params, return_type))
+}
+
+fn split_top_level_commas(value: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut depth = 0usize;
+    let mut start = 0usize;
+    for (index, character) in value.char_indices() {
+        match character {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(value[start..index].trim());
+                start = index + character.len_utf8();
+            }
+            _ => {}
+        }
+    }
+    parts.push(value[start..].trim());
+    parts
 }
 
 fn parse_return_type(value: &str) -> Result<ReturnType, String> {
@@ -417,6 +535,15 @@ fn parse_return_operand(value: &str, return_type: ReturnType) -> Result<Operand,
 fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, String> {
     if !is_llvm_local(result) {
         return Err(format!("unsupported LLVM result name {result:?}"));
+    }
+    if let Some(pointer) = parse_load(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Load,
+            lhs: pointer,
+            rhs: Operand::Constant(0),
+            condition: None,
+        });
     }
     if let Some((condition, lhs, rhs)) = parse_select(expression)? {
         return Ok(Instruction {
@@ -562,6 +689,80 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
         rhs,
         condition: None,
     })
+}
+
+fn parse_load(expression: &str) -> Result<Option<Operand>, String> {
+    let Some(arguments) = expression.strip_prefix("load ") else {
+        return Ok(None);
+    };
+    let mut fields = arguments.split(',').map(str::trim);
+    if fields.next() != Some("i32") {
+        return Err("only non-volatile LLVM load i32 instructions are supported".into());
+    }
+    let pointer_field = fields
+        .next()
+        .ok_or("LLVM load pointer operand is missing")?;
+    let mut pointer_tokens = pointer_field.split_whitespace();
+    if pointer_tokens.next() != Some("ptr") {
+        return Err("LLVM load requires an opaque local-store pointer".into());
+    }
+    let pointer_name = pointer_tokens
+        .last()
+        .ok_or("LLVM load pointer name is missing")?;
+    if !is_llvm_local(pointer_name) {
+        return Err("LLVM load only supports a named pointer parameter".into());
+    }
+
+    let alignment = fields
+        .filter_map(|field| field.strip_prefix("align "))
+        .find_map(|value| value.split_whitespace().next()?.parse::<u32>().ok())
+        .ok_or("LLVM load requires explicit alignment metadata")?;
+    if alignment < 4 || !alignment.is_power_of_two() {
+        return Err(format!(
+            "SPU word loads require a power-of-two alignment of at least 4 bytes; found {alignment}"
+        ));
+    }
+
+    Ok(Some(Operand::Value(pointer_name.to_owned())))
+}
+
+fn parse_store(expression: &str) -> Result<Option<(Operand, Operand)>, String> {
+    let mut fields = expression.split(',').map(str::trim);
+    let Some(value_field) = fields.next() else {
+        return Err("LLVM store value operand is missing".into());
+    };
+    let mut value_tokens = value_field.split_whitespace();
+    if value_tokens.next() != Some("i32") {
+        return Err("only non-volatile LLVM store i32 instructions are supported".into());
+    }
+    let value_name = value_tokens.last().ok_or("LLVM store value is missing")?;
+    let value = parse_operand(value_name)?;
+
+    let pointer_field = fields
+        .next()
+        .ok_or("LLVM store pointer operand is missing")?;
+    let mut pointer_tokens = pointer_field.split_whitespace();
+    if pointer_tokens.next() != Some("ptr") {
+        return Err("LLVM store requires an opaque local-store pointer".into());
+    }
+    let pointer_name = pointer_tokens
+        .last()
+        .ok_or("LLVM store pointer name is missing")?;
+    if !is_llvm_local(pointer_name) {
+        return Err("LLVM store only supports a named pointer parameter".into());
+    }
+
+    let alignment = fields
+        .filter_map(|field| field.strip_prefix("align "))
+        .find_map(|value| value.split_whitespace().next()?.parse::<u32>().ok())
+        .ok_or("LLVM store requires explicit alignment metadata")?;
+    if alignment < 4 || !alignment.is_power_of_two() {
+        return Err(format!(
+            "SPU word stores require a power-of-two alignment of at least 4 bytes; found {alignment}"
+        ));
+    }
+
+    Ok(Some((value, Operand::Value(pointer_name.to_owned()))))
 }
 
 fn parse_select(expression: &str) -> Result<Option<(Operand, Operand, Operand)>, String> {
@@ -1009,6 +1210,54 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
     let mut free_temps = BTreeSet::new();
     let mut next_temp = first_temp;
     for (index, instruction) in function.instructions.iter().enumerate() {
+        if instruction.op == Operation::Store {
+            let value = match &instruction.lhs {
+                Operand::Value(value) => value,
+                Operand::Constant(_) => {
+                    return Err("LLVM store currently requires a named i32 value".into())
+                }
+            };
+            let pointer = match &instruction.rhs {
+                Operand::Value(pointer) => pointer,
+                Operand::Constant(_) => {
+                    return Err("LLVM store needs a named local-store pointer".into())
+                }
+            };
+            let value_reg = *reg_for
+                .get(value)
+                .ok_or_else(|| format!("unknown SPU store value {value}"))?;
+            let pointer_reg = *reg_for
+                .get(pointer)
+                .ok_or_else(|| format!("unknown SPU store pointer {pointer}"))?;
+            let mask = allocate_scratch(&mut next_temp, &mut free_temps)?;
+            let merged = match allocate_scratch(&mut next_temp, &mut free_temps) {
+                Ok(register) => register,
+                Err(error) => {
+                    free_temps.insert(mask);
+                    return Err(error);
+                }
+            };
+            operations.extend([
+                format!("lqd $2,0(${pointer_reg})"),
+                format!("cwd ${mask},0(${pointer_reg})"),
+                format!("shufb ${merged},${value_reg},$2,${mask}"),
+                format!("stqd ${merged},0(${pointer_reg})"),
+            ]);
+            free_temps.extend([mask, merged]);
+
+            for operand in [&instruction.lhs, &instruction.rhs] {
+                if let Operand::Value(value) = operand {
+                    if last_use.get(value) == Some(&index) {
+                        if let Some(reg) = reg_for.get(value).copied() {
+                            if reg >= first_temp && reg < 80 {
+                                free_temps.insert(reg);
+                            }
+                        }
+                    }
+                }
+            }
+            continue;
+        }
         let needs_constant_register = match (instruction.op, &instruction.lhs, &instruction.rhs) {
             (Operation::Binary(BinaryOp::Sub), Operand::Constant(0), Operand::Value(_)) => false,
             (Operation::Binary(BinaryOp::Xor), Operand::Value(_), Operand::Constant(-1))
@@ -1053,6 +1302,12 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     .get(rhs)
                     .ok_or_else(|| format!("unknown SPU value {rhs}"))?;
                 match instruction.op {
+                    Operation::Load => {
+                        return Err("LLVM load needs a pointer value and no second operand".into())
+                    }
+                    Operation::Store => {
+                        return Err("LLVM store must be lowered as a side-effect".into())
+                    }
                     Operation::Unary(UnaryOp::CountLeadingZeros) => {
                         operations.push(format!("clz ${dst},${lhs_reg}"));
                     }
@@ -1189,6 +1444,19 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     .get(value)
                     .ok_or_else(|| format!("unknown SPU value {value}"))?;
                 match instruction.op {
+                    Operation::Load => {
+                        if *constant != 0 {
+                            return Err("LLVM load has an unexpected second operand".into());
+                        }
+                        operations.extend([
+                            format!("ori $2,${source},0"),
+                            format!("lqd ${dst},0(${source})"),
+                            format!("rotqby ${dst},${dst},$2"),
+                        ]);
+                    }
+                    Operation::Store => {
+                        return Err("LLVM store must be lowered as a side-effect".into())
+                    }
                     Operation::Unary(UnaryOp::CountLeadingZeros) => {
                         operations.push(format!("clz ${dst},${source}"));
                     }
@@ -1314,6 +1582,12 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     .get(value)
                     .ok_or_else(|| format!("unknown SPU value {value}"))?;
                 match instruction.op {
+                    Operation::Load => {
+                        return Err("LLVM load needs its pointer as the first operand".into())
+                    }
+                    Operation::Store => {
+                        return Err("LLVM store must be lowered as a side-effect".into())
+                    }
                     Operation::Unary(_) => {
                         return Err("unary SPU instruction received a constant value".into())
                     }
@@ -1422,6 +1696,10 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                 }
             }
             (Operand::Constant(lhs), Operand::Constant(rhs)) => match instruction.op {
+                Operation::Load => return Err("LLVM load needs a named local-store pointer".into()),
+                Operation::Store => {
+                    return Err("LLVM store must be lowered as a side-effect".into())
+                }
                 Operation::Unary(UnaryOp::CountLeadingZeros) => {
                     operations.extend(materialize_i32(dst, (*lhs as u32).leading_zeros() as i32));
                 }
@@ -2442,6 +2720,50 @@ mod tests {
             lower_to_spu_assembly(&function).unwrap(),
             ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  a $3,$3,$4\n  bi $0\n.size f,.-f\n"
         );
+    }
+
+    #[test]
+    fn lowers_aligned_local_store_u32_load() {
+        let module = "define noundef i32 @load_u32(ptr nofree noundef readonly captures(none) %ptr) unnamed_addr #0 {\nstart:\n  %value = load i32, ptr %ptr, align 4, !noundef !5\n  ret i32 %value\n}\n";
+        let function = parse_scalar_function(module).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(
+            assembly.contains("ori $2,$3,0\n  lnop\n  lqd $3,0($3)\n  lnop\n  rotqby $3,$3,$2\n")
+        );
+    }
+
+    #[test]
+    fn rejects_under_aligned_local_store_u32_loads() {
+        let module = "define noundef i32 @load_u32(ptr %ptr) {\n  %value = load i32, ptr %ptr, align 1\n  ret i32 %value\n}\n";
+        assert!(parse_scalar_function(module)
+            .unwrap_err()
+            .contains("alignment of at least 4 bytes"));
+    }
+
+    #[test]
+    fn lowers_aligned_local_store_u32_store() {
+        let module = "define noundef i32 @store_u32(ptr %ptr, i32 %value) {\n  store i32 %value, ptr %ptr, align 4\n  ret i32 %value\n}\n";
+        let function = parse_scalar_function(module).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(assembly.contains(
+            "lqd $2,0($3)\n  lnop\n  cwd $5,0($3)\n  lnop\n  shufb $6,$4,$2,$5\n  lnop\n  stqd $6,0($3)\n  lnop\n  or $3,$4,$4\n  bi $0"
+        ));
+    }
+
+    #[test]
+    fn rejects_under_aligned_local_store_u32_stores() {
+        let module = "define noundef i32 @store_u32(ptr %ptr, i32 %value) {\n  store i32 %value, ptr %ptr, align 1\n  ret i32 %value\n}\n";
+        assert!(parse_scalar_function(module)
+            .unwrap_err()
+            .contains("alignment of at least 4 bytes"));
+    }
+
+    #[test]
+    fn rejects_arithmetic_on_local_store_pointer_values() {
+        let module = "define noundef i32 @invalid(ptr %ptr, i32 %value) {\n  %sum = add i32 %ptr, %value\n  ret i32 %sum\n}\n";
+        assert!(parse_scalar_function(module)
+            .unwrap_err()
+            .contains("pointer value %ptr can only be used by a supported load or store"));
     }
 
     #[test]

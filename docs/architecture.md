@@ -158,17 +158,18 @@ The current driver:
 
 1. Requires `#![no_std]` Rust source.
 2. Uses host `rustc` to parse and type-check it and emit host LLVM IR.
-3. Accepts one function with zero to 75 named `i32` parameters: 72 register
-   arguments plus up to three stack-passed arguments. More stack arguments are
-   rejected. It supports a straight-line
+3. Accepts one function with zero to 75 named 32-bit scalar or local-store
+   address parameters: 72 register arguments plus up to three stack-passed
+   arguments. More stack arguments are rejected. It supports a straight-line
    sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
    `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
    `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, signed
    and unsigned `min`/`max`, unsigned `u32::saturating_add` and
    `u32::saturating_sub`, signed `i32::saturating_add` and
    `i32::saturating_sub`, `u32::reverse_bits`, `u32::swap_bytes`, scalar
-   `select`, or integer comparisons. It returns a parameter, computed `i32`, Rust `bool`, or
-   a 32-bit literal.
+   `select`, integer comparisons, and aligned `i32` loads and stores through a
+   named local-store pointer parameter. It returns a parameter, computed
+   `i32`, Rust `bool`, or a 32-bit literal.
    Add/subtract, logic, shift, and rotate
    immediates are used when the SPU encoding permits; multiply operands and
    other constants are materialized in a temporary register. `icmp` supports
@@ -227,8 +228,9 @@ The current driver:
    `--entry-args` supplies these image-time words. Both paths can invoke
    `spu-ld` to make an ELF executable.
    `--runtime-args` leaves incoming `$3` through `$6` intact and forwards them
-   to a function with up to four `i32` parameters. Its optional emulator test
-   uses the emulator's `-r` register presets. This does not yet match or verify
+   to a function with up to four 32-bit scalar or local-store address
+   parameters. Its optional emulator test uses the emulator's `-r` register
+   presets. This does not yet match or verify
    PSL1GHT's four 64-bit `sysSpuThreadArgument` fields, PPU effective addresses,
    or a real PPU-launched SPU thread.
 
@@ -245,8 +247,12 @@ SPU rotate variants. The SPU's logical and arithmetic right-shift instructions
 consume a negated count, so the lowering either negates a count at its last use
 or reserves a temporary register when the value stays live. Comparisons
 convert SPU's all-ones true mask into the C ABI's zero-extended Rust bool
-value. The prototype rejects
-pointers, loads, stores, control flow, other calls, other integer widths, most
+value. The prototype only uses a pointer as the address for an aligned
+local-store `i32` load or store. Store lowering uses
+`lqd`/`cwd`/`shufb`/`stqd` to update one word while preserving its neighboring
+words, and currently accepts a named `i32` value rather than a constant-only
+store. It still rejects pointer arithmetic, other access widths, volatile and
+atomic operations, control flow, other calls, other integer widths, most
 constant-only binary operations, and additional functions. Straight-line
 sequences reuse caller-saved temporary registers after their last use and are
 rejected when simultaneously live values exceed the available registers. The

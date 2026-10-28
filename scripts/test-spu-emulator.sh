@@ -55,6 +55,13 @@ cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
 cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
     --runtime-args -o "$tmp/runtime_args.elf" examples/add_u32.rs
 
+cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
+    --runtime-args -o "$tmp/load_u32.elf" examples/load_u32.rs
+cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
+    --runtime-args -o "$tmp/store_u32.elf" examples/store_u32.rs
+printf '\x12\x34\x56\x78\x89\xab\xcd\xef\xfe\xdc\xba\x98\x0b\xad\xf0\x0d' \
+    > "$tmp/load_words.bin"
+
 run_case() {
     local name=$1 image=$2 expected=$3
     shift 3
@@ -87,6 +94,25 @@ run_case() {
     grep -E '^ pc:|^003:' "$log" || true
 }
 
+check_local_store_store_pattern() {
+    local changed_word=$1 index offset expected actual
+    local expected_words=(12345678 89abcdef fedcba98 0badf00d)
+    for index in 0 1 2 3; do
+        offset=$((4096 + index * 4))
+        expected=${expected_words[$index]}
+        if [[ "$index" == "$changed_word" ]]; then
+            expected=deadbeef
+        fi
+        actual=$(od -An -j "$offset" -N4 -tx1 "$tmp/ls.b" | tr -d '[:space:]')
+        if [[ "$actual" != "$expected" ]]; then
+            printf -v address '0x%x' "$((0x1000 + index * 4))"
+            echo "local-store-store-word-$changed_word: expected word $index at $address to be $expected, got ${actual:-<empty>}" >&2
+            exit 1
+        fi
+    done
+    printf 'local-store-store-word-%s: changed word and neighboring words verified in local store\n' "$changed_word"
+}
+
 compile_entry() {
     local function=$1 args=$2
     cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
@@ -99,6 +125,20 @@ run_case addition-wide "$tmp/add_entry.elf" 1234acf0
 if [[ "${SPU_EMULATOR_HAS_REG_PRESETS:-0}" == "1" ]]; then
     run_case runtime-argument-registers "$tmp/runtime_args.elf" 1234acf0 \
         -r 3=12345678 -r 4=00005678
+    run_case local-store-load-word-0 "$tmp/load_u32.elf" 12345678 \
+        -L "$tmp/load_words.bin@0x1000" -r 3=00001000
+    run_case local-store-load-word-1 "$tmp/load_u32.elf" 89abcdef \
+        -L "$tmp/load_words.bin@0x1000" -r 3=00001004
+    run_case local-store-load-word-2 "$tmp/load_u32.elf" fedcba98 \
+        -L "$tmp/load_words.bin@0x1000" -r 3=00001008
+    run_case local-store-load-word-3 "$tmp/load_u32.elf" 0badf00d \
+        -L "$tmp/load_words.bin@0x1000" -r 3=0000100c
+    for word_index in 0 1 2 3; do
+        address=$(printf '%08x' "$((0x1000 + word_index * 4))")
+        run_case "local-store-store-word-$word_index" "$tmp/store_u32.elf" deadbeef \
+            -L "$tmp/load_words.bin@0x1000" -r "3=$address" -r 4=deadbeef
+        check_local_store_store_pattern "$word_index"
+    done
 else
     echo "skipping runtime-argument emulator case: set SPU_EMULATOR_HAS_REG_PRESETS=1 when the emulator supports -r register presets"
 fi

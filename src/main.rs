@@ -157,7 +157,7 @@ fn run() -> Result<(), String> {
                 if config.runtime_args {
                     if parameter_count > 4 {
                         return Err(format!(
-                            "--runtime-args supports at most four i32 arguments in registers $3 through $6; found {parameter_count}"
+                            "--runtime-args supports at most four 32-bit scalar or address arguments in registers $3 through $6; found {parameter_count}"
                         ));
                     }
                     Some(if config.thread_exit {
@@ -408,8 +408,8 @@ fn print_help() {
          --emit=elf links a stop-only _start or a scalar function through minimal startup.\n\
          --entry-args supplies comma-separated decimal or hexadecimal 32-bit words\n\
          for up to 72 SPU ABI argument registers and three stack-passed words.\n\
-         --runtime-args forwards incoming 32-bit words in $3 through $6 to a function\n\
-         with up to four i32 parameters; it does not validate the PS3 u64 argument ABI.\n\
+         --runtime-args forwards incoming 32-bit words or local-store addresses in $3 through $6\n\
+         to a function with up to four parameters; it does not validate the PS3 u64 argument ABI.\n\
          --thread-exit uses the PSL1GHT stop 0x102 exit convention after the result.\n\
          This is an experimental proof of concept, not a rustc target specification."
     );

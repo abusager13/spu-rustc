@@ -45,8 +45,12 @@ multi-operation code, ABI argument placement,
 liveness-based temporary reuse, and stop-only and scalar-entry ELFs. The scalar
 startup initializes the local-store stack pointer, supplies optional
 image-time argument words, calls the Rust function, posts its result to the
-outbound mailbox, and stops. This is a tested
-native-code milestone, not a general Rust target or PPU loader.
+outbound mailbox, and stops. Local-store access now reads and writes aligned
+`u32` words through 32-bit local-store pointers. Emulator checks exercise loads
+and stores at all four word offsets in a quadword and verify that stores leave
+neighboring words unchanged. A minimal Rust PPU launcher also cross-builds,
+but has not been run in a PS3 emulator or on hardware. This is still a
+host-frontend prototype, not a general Rust target or runtime.
 
 The current compiler/backend direction is to port and modernize LLVM's
 historical CellSPU backend, using the PS3 GNU toolchain as the assembler,
