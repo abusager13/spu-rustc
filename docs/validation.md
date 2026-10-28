@@ -389,11 +389,25 @@ in this repository.
    not wired into this repository and does not establish a supported Rust
    target. The same old compiler rejects `extern "C"` for `arch: "spu"`. A
    direct path-dependency probe using `core` and `u32::wrapping_add` reached
-   code generation but the adapter panicked on `unsigned char` vector size 2;
-   Cargo then also reported that it could not find `compiler_builtins` for the
+   code generation but the adapter panicked on `unsigned char` vector size 2.
+   A separate temporary shim implemented vector introspection against GCC
+   9.5's internal JIT type objects and got past that panic; the next run failed
+   while lowering a core aggregate constant, with null GCC JIT values and field
+   types. Cargo also reported that it could not find `compiler_builtins` for the
    target. No `core`-using function was produced or run. These checks show
    progress on a narrow codegen route while leaving the target backend, C ABI,
    and `core` support unresolved.
+49. Added `experiments/legacy-rustc/` with the custom target JSON, a `#![no_core]`
+   identity example, SPU startup assembly, and a repeatable test script. The
+   target cfg reports `target_arch="spu"`, big endian, and 32-bit pointers; its
+   data layout matches the one recorded for historical LLVM CellSPU. Ran
+   `scripts/test-legacy-rustc-backend.sh` with the external patched 2021
+   `rustc_codegen_gcc`, GCC 9.5 SPU `libgccjit`, compatibility shim, SPU
+   binutils, and `anergistic`. The script verified the ELF32 big-endian `EM_SPU`
+   relocatable object and executable, reached SPU `stop`, and received `42` in
+   mailbox channel 28. This harness covers one Rust-ABI identity function only;
+   the backend/shim are external, and the file is not a rustc built-in target
+   or a `core` build.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

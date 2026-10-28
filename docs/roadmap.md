@@ -130,14 +130,17 @@ unverified at runtime. It passes no arguments to the SPU image.
    emulated one `#![no_core]` Rust-ABI identity function through GCC 9.5
    `libgccjit`. It needed temporary API remapping, 33 no-op compatibility
    symbols, and a custom JSON with `arch: "spu"` plus a PowerPC LLVM-triple
-   placeholder. This proves one route to native Rust-generated SPU code, not a
-   supported project target. A `#![no_std]` probe using `core` reached backend
-   code generation but panicked on a GCC JIT two-byte vector type; Cargo also
-   could not find target `compiler_builtins`. The old compiler rejects
-   `extern "C"` for `arch: "spu"`. Advancing this route requires a maintained
-   Rust/GCC pairing, clean API compatibility, vector lowering, target runtime
-   support, and full Rust ABI validation. Preserve historical LLVM tests as
-   backend support grows.
+   placeholder. The custom JSON now uses the historical CellSPU data layout,
+   and a repository harness compiles and emulates the identity function. This
+   proves one route to native Rust-generated SPU code, not a supported project
+   target. A `#![no_std]` probe using `core` first panicked when vector type
+   introspection returned null. A temporary vector-introspection shim got
+   past that point, but codegen then failed while lowering a core aggregate
+   constant; Cargo also could not find target `compiler_builtins`. The old
+   compiler rejects `extern "C"` for `arch: "spu"`. Advancing this route
+   requires a maintained Rust/GCC pairing, clean API compatibility, vector and
+   aggregate lowering, target runtime support, and full Rust ABI validation.
+   Preserve historical LLVM tests as backend support grows.
 6. Define and implement a Rust SPU target specification, full calling
    convention and data layout, relocations, stack frames, memory operations,
    and linker support; build `core` with `#![no_std]` and `panic=abort`.

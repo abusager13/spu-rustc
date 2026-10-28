@@ -110,18 +110,21 @@ backend: nightly rustc 1.59 with `rustc_codegen_gcc` from 2021, GCC 9.5 SPU
 `libgccjit`, temporary API compatibility edits, and no-op symbols for 33 newer
 APIs unused by the tested function. It emitted a native SPU object for a
 `#![no_core]` one-argument identity function, which linked and ran in the
-emulator with the expected mailbox result. The custom JSON set `arch: "spu"`,
-which rustc exposed through `target_arch="spu"`, but retained a PowerPC LLVM
-triple as a placeholder because stock LLVM has no SPU target. This is stronger
-than the earlier PowerPC-architecture probe, but it still is not a supported
-project build path: the adapter patches and compatibility shim are temporary,
-other APIs and function forms remain untested, and it provides neither a
-maintained Rust SPU target nor `core` support. A follow-up `#![no_std]` probe
-using `u32::wrapping_add` reached backend code generation but the adapter
-panicked on a GCC JIT vector type (`unsigned char` vector of two elements); Cargo
-also reported that it could not find target `compiler_builtins`. The old
-compiler rejects `extern "C"` for this custom architecture. These results and
-the exact scope are recorded in `docs/validation.md`.
+emulator with the expected mailbox result. A repeatable harness, sample, and
+custom target JSON now live in `experiments/legacy-rustc/`. The JSON sets
+`arch: "spu"`, which rustc exposes through `target_arch="spu"`, and uses the
+historical CellSPU data layout. It retains a PowerPC LLVM triple as a
+placeholder because stock LLVM has no SPU target. This is still not a
+supported project build path: the adapter patches and compatibility shim are
+temporary, other APIs and function forms remain untested, and it provides
+neither a maintained Rust SPU target nor `core` support. Without the vector
+compatibility implementation, the `#![no_std]` probe using `u32::wrapping_add`
+panicked on GCC JIT's `u8x2` type. A separate temporary vector-introspection
+shim got past that point, but codegen then failed while lowering a core
+aggregate constant with null GCC JIT values. Cargo also reported that it could
+not find target `compiler_builtins`. The old compiler rejects `extern "C"` for
+this custom architecture. These results and the exact scope are recorded in
+`docs/validation.md`.
 
 The GCC 9.5 SPU [machine description](https://github.com/gcc-mirror/gcc/blob/releases/gcc-9.5.0/gcc/config/spu/spu.md)
 models the integer arithmetic pipe separately from `lnop`'s second pipe. Its

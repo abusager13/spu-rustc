@@ -223,7 +223,9 @@ compatibility shims. Its custom target sets `arch: "spu"` (visible to Rust's
 not integrated into this project and does not provide a supported Rust SPU
 target or `core`; see the
 [`validation record`](docs/validation.md#validation-record) for the exact scope
-and limitations.
+and limitations. A repeatable one-function harness and its experimental target
+JSON are in [`experiments/legacy-rustc`](experiments/legacy-rustc/README.md); it
+requires the external 2021 codegen backend and GCC 9.5 compatibility shim.
 
 ## License
 

@@ -52,6 +52,13 @@ neighboring words unchanged. A minimal Rust PPU launcher also cross-builds,
 but has not been run in a PS3 emulator or on hardware. This is still a
 host-frontend prototype, not a general Rust target or runtime.
 
+A separate legacy experiment now has a versioned custom target JSON using the
+historical CellSPU data layout and a repeatable emulator smoke harness. With
+external Rust 1.59/GCC 9.5 backend artifacts, it compiles and runs a single
+`#![no_core]` Rust-ABI identity function. It does not build `core` or provide a
+supported target; the complete target and runtime acceptance criteria remain
+open.
+
 The current compiler/backend direction is to port and modernize LLVM's
 historical CellSPU backend, using the PS3 GNU toolchain as the assembler,
 linker, and ABI reference. See [the architecture investigation](docs/architecture.md)
