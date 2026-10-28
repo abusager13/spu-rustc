@@ -351,6 +351,11 @@ in this repository.
    selects, and bit operations. The script skipped `count_ones` because this
    emulator build has no `sumb` implementation. This does not execute the PPU
    launcher or verify PS3 thread exit-status retrieval.
+45. With the SPU toolchain on `PATH`, `SPU_REQUIRE_E2E=1 cargo test --offline`
+   passed all 70 unit tests and all five end-to-end tests. The end-to-end suite
+   includes the runtime-register startup and `stop 0x102` thread-exit ELF
+   checks. `cargo fmt --all -- --check`, `rustfmt --check --edition 2021
+   ppu-loader/src/lib.rs`, and `git diff --check` also passed.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
