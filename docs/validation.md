@@ -397,17 +397,27 @@ in this repository.
    target. No `core`-using function was produced or run. These checks show
    progress on a narrow codegen route while leaving the target backend, C ABI,
    and `core` support unresolved.
-49. Added `experiments/legacy-rustc/` with the custom target JSON, a `#![no_core]`
-   identity example, SPU startup assembly, and a repeatable test script. The
-   target cfg reports `target_arch="spu"`, big endian, and 32-bit pointers; its
-   data layout matches the one recorded for historical LLVM CellSPU. Ran
+49. Added `experiments/legacy-rustc/` with the custom target JSON, `#![no_core]`
+   Rust-ABI identity and `u32` addition examples, SPU startup assembly, and a
+   repeatable test script. The addition example calls the compiler's
+   `wrapping_add` intrinsic without linking `core`. The target cfg reports
+   `target_arch="spu"`, big endian, and 32-bit pointers; its data layout matches
+   the one recorded for historical LLVM CellSPU. Ran
    `scripts/test-legacy-rustc-backend.sh` with the external patched 2021
    `rustc_codegen_gcc`, GCC 9.5 SPU `libgccjit`, compatibility shim, SPU
-   binutils, and `anergistic`. The script verified the ELF32 big-endian `EM_SPU`
-   relocatable object and executable, reached SPU `stop`, and received `42` in
-   mailbox channel 28. This harness covers one Rust-ABI identity function only;
-   the backend/shim are external, and the file is not a rustc built-in target
-   or a `core` build.
+   binutils, and `anergistic`. The script verified ELF32 big-endian `EM_SPU`
+   objects, checked that the addition object contains native `a $3,$3,$4`,
+   linked both into SPU executables, reached `stop`, and received `42` and
+   `0x1234acf0` in mailbox channel 28. The backend/shim are external; this is
+   not a rustc built-in target or a `core` build.
+50. Re-ran `SPU_REQUIRE_E2E=1 cargo test --offline` with the PS3 SPU binutils
+   on `PATH`: all 75 unit tests and all 5 assembler/linker end-to-end tests
+   passed. Ran `scripts/test-spu-emulator.sh` with the pinned `anergistic`
+   emulator and register presets enabled; all enabled scalar, local-store,
+   stack-argument, and runtime-register cases reached `stop` and returned the
+   expected mailbox words. The script skipped population-count cases because
+   this emulator build leaves `sumb` unimplemented. No hardware or PS3 PPU
+   launcher execution was tested.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

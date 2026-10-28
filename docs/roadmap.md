@@ -127,13 +127,14 @@ unverified at runtime. It passes no arguments to the SPU image.
    pinned by the current `rustc_codegen_gcc` checkout has removed SPU support:
    `spu*-*-*` is in its unsupported-target list, and the SPU machine description
    is absent. An isolated legacy `rustc_codegen_gcc` experiment compiled and
-   emulated one `#![no_core]` Rust-ABI identity function through GCC 9.5
-   `libgccjit`. It needed temporary API remapping, 33 no-op compatibility
-   symbols, and a custom JSON with `arch: "spu"` plus a PowerPC LLVM-triple
+   emulated two `#![no_core]` Rust-ABI functions through GCC 9.5 `libgccjit`:
+   an identity function and a `u32` addition using a compiler intrinsic. The
+   latter emits native SPU `a`. The route needed temporary API remapping, 33
+   no-op compatibility symbols, and a custom JSON with `arch: "spu"` plus a PowerPC LLVM-triple
    placeholder. The custom JSON now uses the historical CellSPU data layout,
-   and a repository harness compiles and emulates the identity function. This
-   proves one route to native Rust-generated SPU code, not a supported project
-   target. A `#![no_std]` probe using `core` first panicked when vector type
+   and a repository harness compiles and emulates both functions. This proves
+   one route to native Rust-generated SPU code, not a supported project target.
+   A normal `#![no_std]` probe using `core` first panicked when vector type
    introspection returned null. A temporary vector-introspection shim got
    past that point, but codegen then failed while lowering a core aggregate
    constant; Cargo also could not find target `compiler_builtins`. The old

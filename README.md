@@ -216,16 +216,16 @@ unsupported.
 Hardware execution has not been tested. Details and the remaining work are in
 [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/roadmap.md).
 
-A separate experiment compiled and emulated one `#![no_core]` identity
-function through a legacy `rustc_codegen_gcc` adapter using temporary API
-compatibility shims. Its custom target sets `arch: "spu"` (visible to Rust's
-`target_arch` cfg) but uses a PowerPC LLVM triple as a placeholder. The route is
-not integrated into this project and does not provide a supported Rust SPU
-target or `core`; see the
+A separate experiment compiled and emulated two `#![no_core]` functions through
+a legacy `rustc_codegen_gcc` adapter using temporary API compatibility shims:
+an identity function and a `u32` addition using a compiler intrinsic. Its
+custom target sets `arch: "spu"` (visible to Rust's `target_arch` cfg) but uses
+a PowerPC LLVM triple as a placeholder. The route is not integrated into this
+project and does not provide a supported Rust SPU target or `core`; see the
 [`validation record`](docs/validation.md#validation-record) for the exact scope
-and limitations. A repeatable one-function harness and its experimental target
-JSON are in [`experiments/legacy-rustc`](experiments/legacy-rustc/README.md); it
-requires the external 2021 codegen backend and GCC 9.5 compatibility shim.
+and limitations. A repeatable harness and its experimental target JSON are in
+[`experiments/legacy-rustc`](experiments/legacy-rustc/README.md); it requires
+the external 2021 codegen backend and GCC 9.5 compatibility shim.
 
 ## License
 

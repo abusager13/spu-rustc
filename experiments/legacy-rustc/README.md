@@ -1,9 +1,11 @@
 # Legacy rustc/GCC SPU backend experiment
 
-This research harness reproduces one narrow result: nightly rustc 1.59, an
+This research harness reproduces two narrow results: nightly rustc 1.59, an
 externally patched 2021 `rustc_codegen_gcc` backend, and GCC 9.5 SPU
-`libgccjit` compile a `#![no_core]` Rust-ABI identity function to ELF32
-big-endian `EM_SPU`, then the SPU emulator executes it and reports `42`.
+`libgccjit` compile `#![no_core]` Rust-ABI identity and `u32` addition
+functions to ELF32 big-endian `EM_SPU`. The addition calls the compiler's
+wrapping-add intrinsic and emits native SPU `a`; the emulator reports `42` for
+the identity case and `0x1234acf0` for the addition case.
 
 This is not a supported Rust target or a build path for this repository. The
 target JSON uses `arch: "spu"` and the historical CellSPU data layout, but its
@@ -14,8 +16,8 @@ build `core`, and the current backend still cannot compile the `core` probe.
 
 The codegen backend, host-shared GCC 9.5 SPU `libgccjit`, GCC dependencies, and
 compatibility shim are external prerequisites. The tested adapter needed
-temporary API remapping plus no-op symbols for newer APIs unused by this
-identity function. Those components are deliberately not bundled here. The
+temporary API remapping plus no-op symbols for newer APIs unused by these
+functions. Those components are deliberately not bundled here. The
 script accepts their paths through environment variables and verifies the
 generated object, linked executable, emulator stop, and mailbox result.
 
@@ -30,8 +32,8 @@ scripts/test-legacy-rustc-backend.sh
 ```
 
 `RUSTC_TOOLCHAIN` (when using rustup's `rustc` shim), `RUSTC` (to use a direct
-compiler path), `SPU_AS`, `SPU_LD`, `SPU_READELF`, and `SPU_EMULATOR_TIMEOUT`
-can override the script defaults. See the project
+compiler path), `SPU_AS`, `SPU_LD`, `SPU_READELF`, `SPU_OBJDUMP`, and
+`SPU_EMULATOR_TIMEOUT` can override the script defaults. See the project
 [validation record](../../docs/validation.md) and
 [architecture investigation](../../docs/architecture.md) for the broader
 backend status and unresolved `core`, ABI, and target integration work.

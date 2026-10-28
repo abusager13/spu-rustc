@@ -54,10 +54,11 @@ host-frontend prototype, not a general Rust target or runtime.
 
 A separate legacy experiment now has a versioned custom target JSON using the
 historical CellSPU data layout and a repeatable emulator smoke harness. With
-external Rust 1.59/GCC 9.5 backend artifacts, it compiles and runs a single
-`#![no_core]` Rust-ABI identity function. It does not build `core` or provide a
-supported target; the complete target and runtime acceptance criteria remain
-open.
+external Rust 1.59/GCC 9.5 backend artifacts, it compiles and runs two
+`#![no_core]` Rust-ABI functions: an identity function and a `u32` addition
+using a compiler intrinsic. The emitted addition object contains native SPU
+`a`. It does not build `core` or provide a supported target; the complete
+target and runtime acceptance criteria remain open.
 
 The current compiler/backend direction is to port and modernize LLVM's
 historical CellSPU backend, using the PS3 GNU toolchain as the assembler,

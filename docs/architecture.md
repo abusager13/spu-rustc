@@ -14,10 +14,15 @@ target spec and a released compiler's target list can differ.
 
 The user-supplied [`rust-ps3` project](https://github.com/ZephyrCodesStuff/rust-ps3)
 is a useful PPU-side reference: it has a Rust PPU runtime, a PS3 target setup,
-and direct LV2 syscall support. Its README still lists SPU tooling and
-inter-processor communication as future work, so it does not supply the missing
-SPU compiler backend or `core` support. This repository has not copied its
-code; the small loader here uses the locally available PSL1GHT APIs.
+and direct LV2 syscall support. Its [README](https://github.com/ZephyrCodesStuff/rust-ps3/blob/main/README.md)
+lists SPU tooling and inter-processor communication as future work. The current
+[`syscalls.rs`](https://github.com/ZephyrCodesStuff/rust-ps3/blob/main/ps3/src/sys/syscalls.rs)
+provides PPU thread, memory, file, and PRX calls, but no SPU thread-group/image
+lifecycle wrapper.
+It therefore does not supply the missing SPU compiler backend, SPU `core`
+support, or a ready-to-use SPU loader. It remains a useful candidate PPU runtime
+for a later launcher experiment. This repository has not copied its code; the
+small loader here uses the locally available PSL1GHT APIs.
 
 The normal Rust compiler delegates instruction selection, register allocation,
 assembly/object emission, and much of ABI lowering to LLVM. A Rust target JSON
@@ -105,20 +110,23 @@ registered SPU target. The pinned stable rustc 1.99.1 additionally requires
 nightly `-Z unstable-options` to parse custom target JSON. A target JSON or a
 cross-libgccjit object smoke alone therefore does not supply a Rust SPU target.
 
-A separate legacy experiment did get one Rust function through a Rust codegen
+A separate legacy experiment did get two Rust functions through a Rust codegen
 backend: nightly rustc 1.59 with `rustc_codegen_gcc` from 2021, GCC 9.5 SPU
 `libgccjit`, temporary API compatibility edits, and no-op symbols for 33 newer
-APIs unused by the tested function. It emitted a native SPU object for a
-`#![no_core]` one-argument identity function, which linked and ran in the
-emulator with the expected mailbox result. A repeatable harness, sample, and
-custom target JSON now live in `experiments/legacy-rustc/`. The JSON sets
+APIs unused by the tested functions. It emitted native SPU objects for a
+`#![no_core]` identity function and a `u32` addition function that calls the
+compiler's wrapping-add intrinsic. The addition object contains the native SPU
+`a` instruction; both objects link and run in the emulator with the expected
+mailbox results. A repeatable harness, samples, and custom target JSON now live
+in `experiments/legacy-rustc/`. The JSON sets
 `arch: "spu"`, which rustc exposes through `target_arch="spu"`, and uses the
 historical CellSPU data layout. It retains a PowerPC LLVM triple as a
 placeholder because stock LLVM has no SPU target. This is still not a
 supported project build path: the adapter patches and compatibility shim are
 temporary, other APIs and function forms remain untested, and it provides
 neither a maintained Rust SPU target nor `core` support. Without the vector
-compatibility implementation, the `#![no_std]` probe using `u32::wrapping_add`
+compatibility implementation, the normal `#![no_std]` probe using
+`u32::wrapping_add`
 panicked on GCC JIT's `u8x2` type. A separate temporary vector-introspection
 shim got past that point, but codegen then failed while lowering a core
 aggregate constant with null GCC JIT values. Cargo also reported that it could
@@ -146,7 +154,7 @@ documented gaps.
 
 The current prototype deliberately does not try to masquerade as that backend.
 The GNU SPU toolchain remains the tested assembler/linker and ABI oracle. The
-legacy GCC adapter now has a one-function experimental end-to-end result, but
+legacy GCC adapter now has a two-function experimental end-to-end result, but
 it still needs a maintained Rust/GCC pairing, a real SPU target specification,
 compatible APIs without no-op shims, and complete Rust ABI and data-layout
 validation before it could become a project backend. The scalar prototype
