@@ -145,7 +145,9 @@ The current driver:
 
 1. Requires `#![no_std]` Rust source.
 2. Uses host `rustc` to parse and type-check it and emit host LLVM IR.
-3. Accepts one function with zero to 72 named `i32` parameters, a straight-line
+3. Accepts one function with zero to 73 named `i32` parameters: 72 register
+   arguments plus exactly one stack-passed argument. More stack arguments are
+   rejected. It supports a straight-line
    sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
    `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
    `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, signed
@@ -190,8 +192,9 @@ The current driver:
    `select i1` accepts an i1 condition and i32 arms and lowers to `selb`;
    comparison masks used by a select remain all-ones or all-zero. This only
    accepts straight-line `select` instructions and does not lower `br` or `phi`.
-4. Assigns parameters to C ABI registers `$3` through `$74`, uses caller-saved
-   registers `$3` through `$79` for computed values, and reuses temporary
+4. Assigns the first 72 parameters to C ABI registers `$3` through `$74` and
+   loads a 73rd parameter from `32($sp)` into `$75`. It uses caller-saved
+   registers `$3` through `$79` for computed values and reuses temporary
    registers after each value's last use. It expands 32-bit multiplication
    into two cross-halfword `mpyh` products, one low-halfword `mpyu` product,
    and two wrapping additions. It places the result in `$3` (using `il` or
@@ -202,13 +205,15 @@ The current driver:
    `core::arch::asm!("stop 0", options(noreturn, ...))` operation, emits `stop
    0`. It can also link a scalar Rust function with startup code that
    initializes `$sp` and `$2`, optionally materializes up to 72 explicit
-   32-bit argument words into `$3` through `$74`, calls the function, posts its
-   result to outbound mailbox channel 28, and stops. `--entry-args` supplies
-   these image-time words. Both paths can invoke `spu-ld` to make an ELF
-   executable.
+   32-bit argument words into `$3` through `$74`, and can place one additional
+   word at `32($sp)` after reserving the caller's 48-byte frame. It calls the
+   function, posts its result to outbound mailbox channel 28, and stops.
+   `--entry-args` supplies these image-time words. Both paths can invoke
+   `spu-ld` to make an ELF executable.
 
-The host LLVM data layout is ignored. This is valid only for the currently
-accepted register-only `i32` operations and `i1` comparison results. Rust
+The host LLVM data layout is ignored. These hand-coded ABI assumptions cover
+only the accepted scalar `i32` operations, `i1` comparison results, and the
+single modeled first stack argument. Rust
 wrapping shifts apply the LLVM-emitted `and 31` before shifting. SPU word
 rotations use the low five bits of the count; variable right rotation negates
 the count before `rot`, and immediate rotations use `roti`. Emulator checks

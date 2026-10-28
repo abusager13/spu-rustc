@@ -89,6 +89,15 @@ compile_entry() {
 run_case scalar-entry "$tmp/scalar_entry.elf" 0000002a
 run_case addition-wide "$tmp/add_entry.elf" 1234acf0
 
+stack_args=""
+for ((index = 0; index < 72; index++)); do
+    stack_args+="0,"
+done
+compile_entry stack_arg_u32 "${stack_args}42"
+run_case stack-passed-argument "$tmp/stack_arg_u32.elf" 0000002a
+compile_entry stack_arg_u32 "${stack_args}0x12345678"
+run_case stack-passed-full-width-argument "$tmp/stack_arg_u32.elf" 12345678
+
 compile_entry sub_u32 100,7
 run_case subtraction "$tmp/sub_u32.elf" 0000005d
 compile_entry mul_u32 0xffffffff,0xffffffff

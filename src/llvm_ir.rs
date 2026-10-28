@@ -1,5 +1,8 @@
 use std::collections::{BTreeSet, HashMap};
 
+pub const SPU_ABI_REGISTER_ARGUMENTS: usize = 72;
+pub const MAX_SUPPORTED_SCALAR_ARGUMENTS: usize = SPU_ABI_REGISTER_ARGUMENTS + 1;
+
 #[derive(Debug, Eq, PartialEq)]
 pub struct Function {
     name: String,
@@ -112,9 +115,9 @@ fn parse_scalar_function(module: &str) -> Result<Function, String> {
         return Err("multi-line LLVM function signatures are not supported".into());
     }
     let (name, params, return_type) = parse_signature(signature)?;
-    if params.len() > 72 {
+    if params.len() > MAX_SUPPORTED_SCALAR_ARGUMENTS {
         return Err(format!(
-            "SPU ABI register lowering supports at most 72 i32 parameters; found {}",
+            "SPU scalar lowering supports at most {MAX_SUPPORTED_SCALAR_ARGUMENTS} i32 parameters (including one stack-passed argument); found {}",
             params.len()
         ));
     }
@@ -382,8 +385,10 @@ fn parse_signature(signature: &str) -> Result<(String, Vec<String>, ReturnType),
             params.push(name.to_owned());
         }
     }
-    if params.len() > 72 {
-        return Err("parameters passed on the stack are not supported".into());
+    if params.len() > MAX_SUPPORTED_SCALAR_ARGUMENTS {
+        return Err(format!(
+            "SPU scalar lowering supports at most {MAX_SUPPORTED_SCALAR_ARGUMENTS} i32 parameters (including one stack-passed argument)"
+        ));
     }
     Ok((name.to_owned(), params, return_type))
 }
@@ -956,7 +961,12 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
     // caller-saved registers. A last-use pass lets linear code reuse dead temps.
     let mut reg_for = HashMap::new();
     for (index, param) in function.params.iter().enumerate() {
-        reg_for.insert(param.clone(), index + 3);
+        let register = if index < SPU_ABI_REGISTER_ARGUMENTS {
+            index + 3
+        } else {
+            75
+        };
+        reg_for.insert(param.clone(), register);
     }
     let select_conditions = function
         .instructions
@@ -971,7 +981,11 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
             Operand::Constant(_) => None,
         })
         .collect::<BTreeSet<_>>();
-    let first_temp = function.params.len() + 3;
+    let first_temp = if function.params.len() > SPU_ABI_REGISTER_ARGUMENTS {
+        76
+    } else {
+        function.params.len() + 3
+    };
     let mut last_use = HashMap::new();
     for (index, instruction) in function.instructions.iter().enumerate() {
         for operand in [&instruction.lhs, &instruction.rhs]
@@ -987,7 +1001,12 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
         last_use.insert(value.clone(), function.instructions.len());
     }
 
-    let mut operations = Vec::with_capacity(function.instructions.len() + 1);
+    let mut operations = Vec::with_capacity(function.instructions.len() + 2);
+    if function.params.len() > SPU_ABI_REGISTER_ARGUMENTS {
+        // GCC's SPU ABI places the first overflow i32 argument in the
+        // quadword at 32($sp). The caller's stack pointer is already adjusted.
+        operations.push("lqd $75,32($1)".to_owned());
+    }
     let mut free_temps = BTreeSet::new();
     let mut next_temp = first_temp;
     for (index, instruction) in function.instructions.iter().enumerate() {
@@ -2220,10 +2239,18 @@ pub fn lower_program_to_spu_assembly(program: &Program) -> Result<String, String
 }
 
 pub fn lower_runtime_startup(function_symbol: &str, arguments: &[u32]) -> String {
-    let mut setup = vec!["ilhu $1,4".to_owned(), "il $2,0".to_owned()];
+    let mut setup = vec!["ilhu $1,4".to_owned()];
+    if arguments.len() > SPU_ABI_REGISTER_ARGUMENTS {
+        // Reserve the 48-byte caller frame GCC uses for the first stack arg.
+        setup.push("ai $1,$1,-48".to_owned());
+    }
+    setup.push("il $2,0".to_owned());
     for (index, argument) in arguments.iter().enumerate() {
         let destination = index + 3;
         setup.extend(materialize_i32(destination, *argument as i32));
+    }
+    if arguments.len() > SPU_ABI_REGISTER_ARGUMENTS {
+        setup.push("stqd $75,32($1)".to_owned());
     }
 
     let mut body = String::new();
@@ -2394,7 +2421,7 @@ mod tests {
 
     #[test]
     fn multiplication_uses_scratch_registers_after_all_abi_argument_registers() {
-        let params = (0..72)
+        let params = (0..SPU_ABI_REGISTER_ARGUMENTS)
             .map(|index| format!("i32 %a{index}"))
             .collect::<Vec<_>>()
             .join(", ");
@@ -2954,11 +2981,12 @@ mod tests {
 
     #[test]
     fn maps_the_seventy_second_argument_to_the_last_argument_register() {
-        let params = (0..72)
+        let params = (0..SPU_ABI_REGISTER_ARGUMENTS)
             .map(|index| format!("i32 %a{index}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let module = format!("define i32 @f({params}) {{\n  ret i32 %a71\n}}\n");
+        let last_register_arg = SPU_ABI_REGISTER_ARGUMENTS - 1;
+        let module = format!("define i32 @f({params}) {{\n  ret i32 %a{last_register_arg}\n}}\n");
         let function = parse_single_i32_binary_function(&module).unwrap();
         assert!(lower_to_spu_assembly(&function)
             .unwrap()
@@ -2966,15 +2994,30 @@ mod tests {
     }
 
     #[test]
-    fn rejects_parameters_that_would_be_passed_on_the_stack() {
-        let params = (0..73)
+    fn loads_the_first_stack_passed_i32_argument_from_the_spu_abi_slot() {
+        let params = (0..MAX_SUPPORTED_SCALAR_ARGUMENTS)
             .map(|index| format!("i32 %a{index}"))
             .collect::<Vec<_>>()
             .join(", ");
-        let module = format!("define i32 @f({params}) {{\n  ret i32 %a72\n}}\n");
+        let stack_arg_index = SPU_ABI_REGISTER_ARGUMENTS;
+        let module = format!("define i32 @f({params}) {{\n  ret i32 %a{stack_arg_index}\n}}\n");
+        let function = parse_single_i32_binary_function(&module).unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&function).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  lqd $75,32($1)\n  lnop\n  or $3,$75,$75\n  bi $0\n.size f,.-f\n"
+        );
+    }
+
+    #[test]
+    fn rejects_signatures_with_more_than_one_stack_passed_i32_argument() {
+        let params = (0..MAX_SUPPORTED_SCALAR_ARGUMENTS + 1)
+            .map(|index| format!("i32 %a{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let module = format!("define i32 @f({params}) {{\n  ret i32 %a73\n}}\n");
         assert!(parse_single_i32_binary_function(&module)
             .unwrap_err()
-            .contains("stack"));
+            .contains("at most 73"));
     }
 
     #[test]
@@ -3058,6 +3101,19 @@ mod tests {
             lower_runtime_startup("add_u32", &[0x1234, 0x1234_5678]),
             ".text\n.p2align 3\n.globl _start\n.type _start,@function\n_start:\n  ilhu $1,4\n  lnop\n  il $2,0\n  lnop\n  il $3,4660\n  lnop\n  ilhu $4,4660\n  lnop\n  iohl $4,22136\n  brsl $0,add_u32\n  wrch $ch28,$3\n  lnop\n  stop 0\n.size _start,.-_start\n"
         );
+    }
+
+    #[test]
+    fn startup_reserves_and_stores_one_stack_passed_scalar_argument() {
+        let arguments = std::iter::repeat_n(0, SPU_ABI_REGISTER_ARGUMENTS)
+            .chain([42])
+            .collect::<Vec<_>>();
+        let startup = lower_runtime_startup("stack_arg_u32", &arguments);
+        assert!(startup.starts_with(
+            ".text\n.p2align 3\n.globl _start\n.type _start,@function\n_start:\n  ilhu $1,4\n  lnop\n  ai $1,$1,-48\n  lnop\n  il $2,0\n"
+        ));
+        assert!(startup.contains("il $75,42\n  lnop\n  stqd $75,32($1)\n"));
+        assert!(startup.contains("brsl $0,stack_arg_u32\n"));
     }
 
     #[test]

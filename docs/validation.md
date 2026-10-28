@@ -258,6 +258,19 @@ in this repository.
    identity path; the adapter patches, compatibility shim, and target JSON
    are not part of this project and do not establish a supported Rust SPU
    target or `core` support.
+37. Added the first stack-passed scalar argument to the integrated prototype.
+   GCC 9.5 SPU reference code for a 73-argument C function reads the 73rd
+   `i32` with `lqd` from `32($sp)`; its caller reserves 48 bytes and writes
+   that argument slot before the call. The Rust frontend now accepts up to 73
+   parameters, loads the final one into `$75`, and rejects larger signatures.
+   Scalar startup reserves the same 48-byte caller frame and stores its
+   image-time 73rd word at `32($sp)`. The new Rust example returns that
+   parameter. `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 64 unit tests
+   and all three end-to-end tests. The pinned emulator script passed 97
+   mailbox checks, including a 73rd argument of 42 and the full-width value
+   `0x12345678`; count-ones remained skipped because the emulator does not
+   implement `sumb`. This covers only the first overflow `i32` argument and
+   does not implement general stack frames or additional stack arguments.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

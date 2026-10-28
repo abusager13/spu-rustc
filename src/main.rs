@@ -343,9 +343,10 @@ fn parse_entry_args(value: &OsString) -> Result<Vec<u32>, String> {
         };
         arguments.push(value);
     }
-    if arguments.len() > 72 {
+    if arguments.len() > llvm_ir::MAX_SUPPORTED_SCALAR_ARGUMENTS {
         return Err(format!(
-            "--entry-args supports at most 72 register-passed words; found {}",
+            "--entry-args supports at most {} words (72 register-passed and one stack-passed); found {}",
+            llvm_ir::MAX_SUPPORTED_SCALAR_ARGUMENTS,
             arguments.len()
         ));
     }
@@ -359,7 +360,7 @@ fn print_help() {
          rustc is used as the host-side frontend; spu-as emits an EM_SPU object.\n\
          --emit=elf links a stop-only _start or a scalar function through minimal startup.\n\
          --entry-args supplies comma-separated decimal or hexadecimal 32-bit words\n\
-         for the scalar function's SPU ABI argument registers.\n\
+         for up to 72 SPU ABI argument registers and one stack-passed word.\n\
          This is an experimental proof of concept, not a rustc target specification."
     );
 }
@@ -417,10 +418,12 @@ mod tests {
     }
 
     #[test]
-    fn rejects_more_entry_words_than_register_arguments() {
-        let words = std::iter::repeat_n("1", 73).collect::<Vec<_>>().join(",");
+    fn rejects_more_entry_words_than_supported_spu_arguments() {
+        let words = std::iter::repeat_n("1", llvm_ir::MAX_SUPPORTED_SCALAR_ARGUMENTS + 1)
+            .collect::<Vec<_>>()
+            .join(",");
         assert!(parse_entry_args(&OsString::from(words))
             .unwrap_err()
-            .contains("at most 72"));
+            .contains("at most 73"));
     }
 }

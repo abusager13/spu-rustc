@@ -66,6 +66,7 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("xor_low_bit", "xori\t$3,$3,1"),
         ("sum3_u32", "a\t$6,$3,$4"),
         ("identity_u32", "bi\t$0"),
+        ("stack_arg_u32", "lqd\t$75,32($1)"),
         ("constant_u32", "il\t$3,42"),
         ("wide_constant_u32", "ilhu\t$3,4660"),
         ("add_large_constant", "il\t$4,4096"),
@@ -161,6 +162,13 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
                 &disassembly,
                 &["a\t$6,$3,$4", "lnop", "a\t$3,$5,$6", "bi\t$0"],
                 "sum3_u32",
+            );
+        }
+        if name == "stack_arg_u32" {
+            assert_in_order(
+                &disassembly,
+                &["lqd\t$75,32($1)", "or\t$3,$75,$75", "bi\t$0"],
+                "stack_arg_u32",
             );
         }
         if name == "mul_u32" {
@@ -685,6 +693,68 @@ fn links_a_scalar_entry_with_local_store_startup_and_mailbox_return() {
             "bi\t$0",
         ],
         "argumentful scalar-entry startup and Rust addition",
+    );
+
+    let stack_source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/stack_arg_u32.rs");
+    let stack_executable = temp.join("stack-arg.elf");
+    let mut stack_words = vec!["0"; 72];
+    stack_words.push("42");
+    let stack_entry_args = stack_words.join(",");
+    let result = Command::new(env!("CARGO_BIN_EXE_spu-rustc"))
+        .arg("--target=spu-sony-ps3")
+        .arg("--emit=elf")
+        .arg(format!("--entry-args={stack_entry_args}"))
+        .arg("-o")
+        .arg(&stack_executable)
+        .arg("--rustc")
+        .arg(&rustc)
+        .arg("--assembler")
+        .arg(&assembler)
+        .arg("--linker")
+        .arg(&linker)
+        .arg(&stack_source)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "stack-argument SPU executable link failed:\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let stack_bytes = fs::read(&stack_executable).unwrap();
+    assert_eq!(&stack_bytes[0..6], b"\x7fELF\x01\x02", "ELF class/endian");
+    assert_eq!(
+        &stack_bytes[16..18],
+        b"\x00\x02",
+        "ELF type must be ET_EXEC"
+    );
+    assert_eq!(
+        &stack_bytes[18..20],
+        b"\x00\x17",
+        "ELF machine must be EM_SPU"
+    );
+    let disassembly = Command::new(&objdump)
+        .arg("-d")
+        .arg(&stack_executable)
+        .output()
+        .unwrap();
+    assert!(
+        disassembly.status.success(),
+        "spu-objdump failed for stack-argument scalar entry"
+    );
+    let disassembly = String::from_utf8_lossy(&disassembly.stdout);
+    assert_in_order(
+        &disassembly,
+        &[
+            "ai\t$1,$1,-48",
+            "il\t$75,42",
+            "stqd\t$75,32($1)",
+            "brsl\t$0,",
+            "lqd\t$75,32($1)",
+            "or\t$3,$75,$75",
+            "bi\t$0",
+        ],
+        "one stack-passed scalar argument",
     );
 
     let mismatch = Command::new(env!("CARGO_BIN_EXE_spu-rustc"))
