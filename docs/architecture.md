@@ -124,8 +124,9 @@ The current driver:
 3. Accepts one function with zero to 72 named `i32` parameters, a straight-line
    sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
    `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
-   `leading_ones`, `trailing_ones`, `count_ones`, or integer comparisons. It
-   returns a parameter, computed `i32`, Rust `bool`, or 32-bit literal.
+   `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, or
+   integer comparisons. It returns a parameter, computed `i32`, Rust `bool`, or
+   32-bit literal.
    Add/subtract, logic, shift, and rotate
    immediates are used when the SPU encoding permits; multiply operands and
    other constants are materialized in a temporary register. `icmp` supports
@@ -139,7 +140,9 @@ The current driver:
    `clz` instructions with a correction that makes zero return 32. `count_ones`
    accepts `llvm.ctpop.i32` and uses `cntb`, `sumb`, and `xshw`. The Rust
    `leading_ones` and `trailing_ones` methods compile to a bitwise complement
-   followed by the corresponding defined-zero count intrinsic.
+   followed by the corresponding defined-zero count intrinsic. `wrapping_abs`
+   accepts only `llvm.abs.i32` with its poison flag false and uses `rotmai`,
+   XOR, and subtraction to preserve the signed minimum value.
 4. Assigns parameters to C ABI registers `$3` through `$74`, uses caller-saved
    registers `$3` through `$79` for computed values, and reuses temporary
    registers after each value's last use. It expands 32-bit multiplication

@@ -47,6 +47,7 @@ enum UnaryOp {
     CountLeadingZeros,
     CountTrailingZeros,
     CountOnes,
+    WrappingAbs,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -405,6 +406,14 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
             rhs: Operand::Constant(0),
         });
     }
+    if let Some(operand) = parse_wrapping_abs(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Unary(UnaryOp::WrappingAbs),
+            lhs: operand,
+            rhs: Operand::Constant(0),
+        });
+    }
     if let Some((op, lhs, rhs)) = parse_funnel_shift(expression)? {
         return Ok(Instruction {
             result: result.to_owned(),
@@ -637,6 +646,45 @@ fn parse_ctpop(expression: &str) -> Result<Option<Operand>, String> {
     Ok(Some(parse_operand(value)?))
 }
 
+fn parse_wrapping_abs(expression: &str) -> Result<Option<Operand>, String> {
+    let intrinsic = "@llvm.abs.i32";
+    let Some(name_start) = expression.find(intrinsic) else {
+        return Ok(None);
+    };
+    let open = expression[name_start + intrinsic.len()..]
+        .find('(')
+        .map(|offset| name_start + intrinsic.len() + offset)
+        .ok_or("LLVM abs argument list is missing")?;
+    let close = expression[open + 1..]
+        .find(')')
+        .map(|offset| open + 1 + offset)
+        .ok_or("LLVM abs argument list is unterminated")?;
+    let arguments = expression[open + 1..close]
+        .split(',')
+        .map(|argument| {
+            let fields = argument.split_whitespace().collect::<Vec<_>>();
+            let ty = if fields.contains(&"i32") {
+                "i32"
+            } else if fields.contains(&"i1") {
+                "i1"
+            } else {
+                return Err("LLVM abs argument type is unsupported".to_owned());
+            };
+            let value = fields
+                .last()
+                .ok_or_else(|| "LLVM abs argument is missing".to_owned())?;
+            Ok((ty, *value))
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    if arguments.len() != 2 || arguments[0].0 != "i32" || arguments[1].0 != "i1" {
+        return Err("LLVM abs requires an i32 value and an i1 poison flag".into());
+    }
+    if arguments[1].1 != "false" {
+        return Err("only defined-overflow LLVM abs semantics are supported".into());
+    }
+    Ok(Some(parse_operand(arguments[0].1)?))
+}
+
 pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
     // Preserve inputs in ABI argument registers and keep computed values in
     // caller-saved registers. A last-use pass lets linear code reuse dead temps.
@@ -720,6 +768,14 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             format!("xshw ${dst},${dst}"),
                         ]);
                     }
+                    Operation::Unary(UnaryOp::WrappingAbs) => {
+                        operations.extend(lower_wrapping_abs(
+                            dst,
+                            lhs_reg,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
                     Operation::Binary(op @ (BinaryOp::LShr | BinaryOp::AShr)) => {
                         let count_is_dead = last_use.get(rhs_name) == Some(&index);
                         operations.extend(lower_variable_shift(
@@ -791,6 +847,14 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             format!("sumb ${dst},${dst},${dst}"),
                             format!("xshw ${dst},${dst}"),
                         ]);
+                    }
+                    Operation::Unary(UnaryOp::WrappingAbs) => {
+                        operations.extend(lower_wrapping_abs(
+                            dst,
+                            source,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
                     }
                     Operation::Binary(op @ (BinaryOp::RotateLeft | BinaryOp::RotateRight)) => {
                         operations.push(lower_rotate_immediate(op, dst, source, *constant));
@@ -898,6 +962,9 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                 }
                 Operation::Unary(UnaryOp::CountOnes) => {
                     operations.extend(materialize_i32(dst, (*lhs as u32).count_ones() as i32));
+                }
+                Operation::Unary(UnaryOp::WrappingAbs) => {
+                    operations.extend(materialize_i32(dst, lhs.wrapping_abs()));
                 }
                 Operation::Compare(predicate) => {
                     let result = evaluate_predicate(predicate, *lhs, *rhs) as i32;
@@ -1183,6 +1250,23 @@ fn lower_trailing_zeros(
     Ok(operations)
 }
 
+fn lower_wrapping_abs(
+    destination: usize,
+    source: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    let sign = allocate_scratch(next_temp, free_temps)
+        .map_err(|_| "wrapping_abs needs one additional caller-saved SPU register")?;
+    let operations = vec![
+        format!("rotmai ${sign},${source},-31"),
+        format!("xor ${destination},${source},${sign}"),
+        format!("sf ${destination},${sign},${destination}"),
+    ];
+    free_temps.insert(sign);
+    Ok(operations)
+}
+
 fn lower_rotate_immediate(op: BinaryOp, destination: usize, source: usize, count: i32) -> String {
     let count = (count as u32 & 31) as i32;
     let count = if op == BinaryOp::RotateRight {
@@ -1384,6 +1468,12 @@ mod tests {
     fn count_ones_ir(value: &str) -> String {
         format!(
             "define noundef i32 @f(i32 noundef %a) {{\nstart:\n  %count = tail call noundef i32 @llvm.ctpop.i32(i32 {value})\n  ret i32 %count\n}}\n"
+        )
+    }
+
+    fn wrapping_abs_ir(poison: &str) -> String {
+        format!(
+            "define noundef i32 @f(i32 noundef %a) {{\nstart:\n  %abs = tail call noundef i32 @llvm.abs.i32(i32 %a, i1 {poison})\n  ret i32 %abs\n}}\n"
         )
     }
 
@@ -1601,6 +1691,22 @@ mod tests {
         assert!(parse_single_i32_binary_function(&trailing_zeros_ir("true"))
             .unwrap_err()
             .contains("defined-zero"));
+    }
+
+    #[test]
+    fn lowers_defined_wrapping_abs_and_preserves_the_minimum_value() {
+        let function = parse_single_i32_binary_function(&wrapping_abs_ir("false")).unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&function).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  rotmai $4,$3,-31\n  lnop\n  xor $3,$3,$4\n  lnop\n  sf $3,$4,$3\n  bi $0\n.size f,.-f\n"
+        );
+    }
+
+    #[test]
+    fn rejects_poisoning_abs_at_the_signed_minimum() {
+        assert!(parse_single_i32_binary_function(&wrapping_abs_ir("true"))
+            .unwrap_err()
+            .contains("defined-overflow"));
     }
 
     #[test]

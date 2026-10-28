@@ -188,6 +188,17 @@ run_case trailing-ones-top-bit-only "$tmp/trailing_ones_u32.elf" 00000000
 compile_entry trailing_ones_u32 0xffffffff
 run_case trailing-ones-all-ones "$tmp/trailing_ones_u32.elf" 00000020
 
+compile_entry wrapping_abs_i32 0
+run_case wrapping-abs-zero "$tmp/wrapping_abs_i32.elf" 00000000
+compile_entry wrapping_abs_i32 5
+run_case wrapping-abs-positive "$tmp/wrapping_abs_i32.elf" 00000005
+compile_entry wrapping_abs_i32 0xfffffffb
+run_case wrapping-abs-negative "$tmp/wrapping_abs_i32.elf" 00000005
+compile_entry wrapping_abs_i32 0x80000000
+run_case wrapping-abs-i32-min "$tmp/wrapping_abs_i32.elf" 80000000
+compile_entry wrapping_abs_i32 0x7fffffff
+run_case wrapping-abs-i32-max "$tmp/wrapping_abs_i32.elf" 7fffffff
+
 if [[ "${SPU_EMULATOR_HAS_SUMB:-0}" == "1" ]]; then
     compile_entry count_ones_u32 0
     run_case count-ones-zero "$tmp/count_ones_u32.elf" 00000000

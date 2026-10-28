@@ -33,9 +33,9 @@ wrapping `i32` multiplication via SPU halfword products, `u32` rotate-left and
 rotate-right operations with variable or constant counts, `u32::leading_zeros`
 via SPU `clz`, `u32::trailing_zeros` via compare/negate/and/`clz`, and
 `u32::leading_ones`/`trailing_ones` via a complement and those count paths, and
-`u32::count_ones` via `cntb`/`sumb`/`xshw`, plus constants, identity functions,
-multi-operation code, ABI argument placement, liveness-based temporary reuse,
-and stop-only and scalar-entry ELFs. The scalar
+`u32::count_ones` via `cntb`/`sumb`/`xshw`, plus signed `i32::wrapping_abs`,
+constants, identity functions, multi-operation code, ABI argument placement,
+liveness-based temporary reuse, and stop-only and scalar-entry ELFs. The scalar
 startup initializes the local-store stack pointer, supplies optional
 image-time argument words, calls the Rust function, posts its result to the
 outbound mailbox, and stops. This is a tested

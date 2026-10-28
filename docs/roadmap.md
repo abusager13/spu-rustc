@@ -37,7 +37,9 @@ SPU compare/negate/and/`clz` sequence; zero is explicitly corrected to 32.
 Emulator tests cover zero, low and high bits, and mixed patterns. Rust
 `leading_ones` and `trailing_ones` compile to a bitwise complement followed by
 the respective zero-count path, and their zero and boundary cases also pass in
-the emulator.
+the emulator. Signed `i32::wrapping_abs` lowers defined wrapping semantics
+through a `rotmai` sign mask, XOR, and subtraction; emulator checks include
+`i32::MIN` and both signed boundaries.
 
 ## Milestone 2: scalar entry image
 

@@ -86,6 +86,7 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("trailing_zeros_u32", "ceqi\t$4,$3,0"),
         ("trailing_ones_u32", "ceqi\t$5,$4,0"),
         ("count_ones_u32", "cntb\t$3,$3"),
+        ("wrapping_abs_i32", "rotmai\t$4,$3,-31"),
         ("cmp_eq_u32", "ceq\t$3,$3,$4"),
         ("cmp_ne_u32", "nor\t$3,$3,$3"),
         ("cmp_slt_i32", "cgt\t$3,$4,$3"),
@@ -273,6 +274,13 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
                     "a\t$3,$3,$5",
                 ],
                 "trailing_ones_u32",
+            );
+        }
+        if name == "wrapping_abs_i32" {
+            assert_in_order(
+                &disassembly,
+                &["rotmai\t$4,$3,-31", "xor\t$3,$3,$4", "sf\t$3,$4,$3"],
+                "wrapping_abs_i32",
             );
         }
         if name.starts_with("cmp_") {

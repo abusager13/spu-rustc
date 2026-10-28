@@ -162,6 +162,13 @@ in this repository.
    `0x80000000`, `0xf0f00000`, and `0xffffffff`; it returned 0, 1, 2, 0, and
    32 for trailing-one inputs `0`, `1`, `3`, `0x80000000`, and `0xffffffff`.
    Each image reached `stop` and wrote the expected mailbox word.
+27. Added `i32::wrapping_abs` lowering for `llvm.abs.i32` with the poison flag
+   false. The native code creates the sign mask with `rotmai`, applies XOR, and
+   subtracts the mask; the object test assembled and checked this sequence.
+   `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 47 unit tests and all
+   three end-to-end tests. The stock emulator returned 0, 5, 5, `0x80000000`,
+   and `0x7fffffff` for zero, positive five, negative five, `i32::MIN`, and
+   `i32::MAX`; each image reached `stop` and wrote the expected mailbox word.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
