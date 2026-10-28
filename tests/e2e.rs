@@ -60,6 +60,7 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("and_u32", "and\t$3,$3,$4"),
         ("or_u32", "or\t$3,$3,$4"),
         ("xor_u32", "xor\t$3,$3,$4"),
+        ("not_u32", "nor\t$3,$3,$3"),
         ("increment_u32", "ai\t$3,$3,1"),
         ("and_low_byte", "andi\t$3,$3,255"),
         ("or_low_bit", "ori\t$3,$3,1"),
@@ -277,7 +278,7 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         if name == "leading_ones_u32" {
             assert_in_order(
                 &disassembly,
-                &["xori\t$4,$3,-1", "clz\t$3,$4"],
+                &["nor\t$4,$3,$3", "clz\t$3,$4"],
                 "leading_ones_u32",
             );
         }
@@ -285,7 +286,7 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
             assert_in_order(
                 &disassembly,
                 &[
-                    "xori\t$4,$3,-1",
+                    "nor\t$4,$3,$3",
                     "ceqi\t$5,$4,0",
                     "sfi\t$6,$4,0",
                     "and\t$6,$4,$6",

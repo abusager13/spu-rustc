@@ -154,7 +154,8 @@ The current driver:
 3. Accepts one function with zero to 75 named `i32` parameters: 72 register
    arguments plus up to three stack-passed arguments. More stack arguments are
    rejected. It supports a straight-line
-   sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
+   sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor` (including
+   Rust unary `!`), `shl`, `lshr`,
    `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
    `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, signed
    and unsigned `min`/`max`, unsigned `u32::saturating_add` and

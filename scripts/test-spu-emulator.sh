@@ -116,6 +116,10 @@ compile_entry or_u32 0xf000,0x00f0
 run_case bitwise-or "$tmp/or_u32.elf" 0000f0f0
 compile_entry xor_u32 0xffff0000,0x0000ffff
 run_case bitwise-xor "$tmp/xor_u32.elf" ffffffff
+compile_entry not_u32 0
+run_case bitwise-not-zero "$tmp/not_u32.elf" ffffffff
+compile_entry not_u32 0x12345678
+run_case bitwise-not-pattern "$tmp/not_u32.elf" edcba987
 
 compile_entry wrapping_shl_u32 1,32
 run_case wrapping-left-shift "$tmp/wrapping_shl_u32.elf" 00000001

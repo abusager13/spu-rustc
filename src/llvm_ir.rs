@@ -1010,6 +1010,8 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
     let mut next_temp = first_temp;
     for (index, instruction) in function.instructions.iter().enumerate() {
         let needs_constant_register = match (instruction.op, &instruction.lhs, &instruction.rhs) {
+            (Operation::Binary(BinaryOp::Xor), Operand::Value(_), Operand::Constant(-1))
+            | (Operation::Binary(BinaryOp::Xor), Operand::Constant(-1), Operand::Value(_)) => false,
             (
                 Operation::Binary(BinaryOp::RotateLeft | BinaryOp::RotateRight),
                 Operand::Value(_),
@@ -1231,6 +1233,9 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     Operation::Binary(op @ (BinaryOp::RotateLeft | BinaryOp::RotateRight)) => {
                         operations.push(lower_rotate_immediate(op, dst, source, *constant));
                     }
+                    Operation::Binary(BinaryOp::Xor) if *constant == -1 => {
+                        operations.push(format!("nor ${dst},${source},${source}"));
+                    }
                     Operation::Binary(op) if immediate_is_encodable(op, *constant, false) => {
                         operations.push(lower_immediate(op, dst, source, *constant, false)?);
                     }
@@ -1362,6 +1367,9 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             &mut next_temp,
                             &mut free_temps,
                         )?);
+                    }
+                    Operation::Binary(BinaryOp::Xor) if *constant == -1 => {
+                        operations.push(format!("nor ${dst},${source},${source}"));
                     }
                     Operation::Binary(op) if immediate_is_encodable(op, *constant, true) => {
                         operations.push(lower_immediate(op, dst, source, *constant, true)?);
@@ -1640,6 +1648,9 @@ fn lower_constant_binary(
     value: i32,
     constant_is_lhs: bool,
 ) -> Result<Vec<String>, String> {
+    if op == BinaryOp::Xor && value == -1 {
+        return Ok(vec![format!("nor ${destination},${source},${source}")]);
+    }
     let mut operations = materialize_i32(destination, value);
     let (lhs, rhs) = if constant_is_lhs {
         (destination, source)
@@ -2475,6 +2486,18 @@ mod tests {
                 parse_single_i32_binary_function(&one_param_ir(op, &format!("%a, {constant}")))
                     .unwrap();
             assert!(lower_to_spu_assembly(&function).unwrap().contains(expected));
+        }
+    }
+
+    #[test]
+    fn lowers_bitwise_not_to_spu_nor_without_materializing_all_ones() {
+        for operands in ["%a, -1", "-1, %a"] {
+            let function =
+                parse_single_i32_binary_function(&one_param_ir("xor", operands)).unwrap();
+            assert_eq!(
+                lower_to_spu_assembly(&function).unwrap(),
+                ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  nor $3,$3,$3\n  bi $0\n.size f,.-f\n"
+            );
         }
     }
 

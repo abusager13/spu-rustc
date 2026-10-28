@@ -286,6 +286,16 @@ in this repository.
    all three end-to-end tests. The emulator passed 98 mailbox checks; its
    count-ones cases remain skipped because this emulator build lacks `sumb`.
 
+39. Rust unary bitwise NOT is emitted as `xor i32 value, -1`. The prototype
+   now recognizes that form and lowers it to the SPU `nor` instruction with
+   the input used as both sources, avoiding an all-ones materialization and a
+   separate XOR. The installed GCC 9.5 SPU compiler emits the same instruction
+   for C `~value`. Unit tests cover both LLVM operand orders, object tests check
+   the assembled instruction, and emulator cases cover zero and a mixed bit
+   pattern. `SPU_REQUIRE_E2E=1 cargo test --offline` passed 67 unit tests and
+   all three end-to-end tests. The emulator passed 100 mailbox checks, with
+   count-ones skipped because this emulator build lacks `sumb`.
+
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
 SPU behavior, a PPU loader, PS3 firmware integration, or physical hardware.
