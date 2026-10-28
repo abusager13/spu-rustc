@@ -70,6 +70,9 @@ enum BinaryOp {
     UnsignedMin,
     UnsignedMax,
     UnsignedSaturatingAdd,
+    UnsignedSaturatingSub,
+    SignedSaturatingAdd,
+    SignedSaturatingSub,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -469,10 +472,10 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
             condition: None,
         });
     }
-    if let Some((lhs, rhs)) = parse_unsigned_saturating_add(expression)? {
+    if let Some((op, lhs, rhs)) = parse_saturating(expression)? {
         return Ok(Instruction {
             result: result.to_owned(),
-            op: Operation::Binary(BinaryOp::UnsignedSaturatingAdd),
+            op: Operation::Binary(op),
             lhs,
             rhs,
             condition: None,
@@ -689,11 +692,22 @@ fn parse_minmax(expression: &str) -> Result<Option<(BinaryOp, Operand, Operand)>
     Ok(Some((op, arguments[0].clone(), arguments[1].clone())))
 }
 
-fn parse_unsigned_saturating_add(expression: &str) -> Result<Option<(Operand, Operand)>, String> {
-    let intrinsic = "@llvm.uadd.sat.i32";
-    let Some(name_start) = expression.find(intrinsic) else {
+fn parse_saturating(expression: &str) -> Result<Option<(BinaryOp, Operand, Operand)>, String> {
+    let intrinsics = [
+        ("@llvm.uadd.sat.i32", BinaryOp::UnsignedSaturatingAdd),
+        ("@llvm.usub.sat.i32", BinaryOp::UnsignedSaturatingSub),
+        ("@llvm.sadd.sat.i32", BinaryOp::SignedSaturatingAdd),
+        ("@llvm.ssub.sat.i32", BinaryOp::SignedSaturatingSub),
+    ];
+    let Some((intrinsic, op)) = intrinsics
+        .into_iter()
+        .find(|(intrinsic, _)| expression.contains(intrinsic))
+    else {
         return Ok(None);
     };
+    let name_start = expression
+        .find(intrinsic)
+        .ok_or("LLVM saturating intrinsic name is missing")?;
     let open = expression[name_start + intrinsic.len()..]
         .find('(')
         .map(|offset| name_start + intrinsic.len() + offset)
@@ -707,7 +721,7 @@ fn parse_unsigned_saturating_add(expression: &str) -> Result<Option<(Operand, Op
         .map(|argument| {
             let fields = argument.split_whitespace().collect::<Vec<_>>();
             if !fields.contains(&"i32") {
-                return Err("LLVM saturating-add arguments must be i32".to_owned());
+                return Err("LLVM saturating arguments must be i32".to_owned());
             }
             let value = fields
                 .last()
@@ -717,11 +731,11 @@ fn parse_unsigned_saturating_add(expression: &str) -> Result<Option<(Operand, Op
         .collect::<Result<Vec<_>, _>>()?;
     if arguments.len() != 2 {
         return Err(format!(
-            "LLVM saturating-add intrinsic requires two operands; found {}",
+            "LLVM saturating intrinsic requires two operands; found {}",
             arguments.len()
         ));
     }
-    Ok(Some((arguments[0].clone(), arguments[1].clone())))
+    Ok(Some((op, arguments[0].clone(), arguments[1].clone())))
 }
 
 fn parse_ctlz(expression: &str) -> Result<Option<(UnaryOp, Operand)>, String> {
@@ -914,14 +928,10 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                 Operand::Constant(_),
             ) => false,
             (Operation::Binary(op), Operand::Value(_), Operand::Constant(value)) => {
-                is_minmax(op)
-                    || op == BinaryOp::UnsignedSaturatingAdd
-                    || !immediate_is_encodable(op, *value, false)
+                is_minmax(op) || is_saturating(op) || !immediate_is_encodable(op, *value, false)
             }
             (Operation::Binary(op), Operand::Constant(value), Operand::Value(_)) => {
-                is_minmax(op)
-                    || op == BinaryOp::UnsignedSaturatingAdd
-                    || !immediate_is_encodable(op, *value, true)
+                is_minmax(op) || is_saturating(op) || !immediate_is_encodable(op, *value, true)
             }
             (Operation::Compare(_), Operand::Value(_), Operand::Constant(_))
             | (Operation::Compare(_), Operand::Constant(_), Operand::Value(_)) => true,
@@ -1025,8 +1035,9 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             &mut free_temps,
                         )?);
                     }
-                    Operation::Binary(BinaryOp::UnsignedSaturatingAdd) => {
-                        operations.extend(lower_unsigned_saturating_add(
+                    Operation::Binary(op) if is_saturating(op) => {
+                        operations.extend(lower_saturating(
+                            op,
                             dst,
                             lhs_reg,
                             rhs_reg,
@@ -1145,9 +1156,10 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             &mut free_temps,
                         )?);
                     }
-                    Operation::Binary(BinaryOp::UnsignedSaturatingAdd) => {
+                    Operation::Binary(op) if is_saturating(op) => {
                         operations.extend(materialize_i32(dst, *constant));
-                        operations.extend(lower_unsigned_saturating_add(
+                        operations.extend(lower_saturating(
+                            op,
                             dst,
                             source,
                             dst,
@@ -1220,9 +1232,10 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             &mut free_temps,
                         )?);
                     }
-                    Operation::Binary(BinaryOp::UnsignedSaturatingAdd) => {
+                    Operation::Binary(op) if is_saturating(op) => {
                         operations.extend(materialize_i32(dst, *constant));
-                        operations.extend(lower_unsigned_saturating_add(
+                        operations.extend(lower_saturating(
+                            op,
                             dst,
                             dst,
                             source,
@@ -1338,6 +1351,18 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                         ((*lhs as u32).saturating_add(*rhs as u32)) as i32,
                     ));
                 }
+                Operation::Binary(BinaryOp::UnsignedSaturatingSub) => {
+                    operations.extend(materialize_i32(
+                        dst,
+                        ((*lhs as u32).saturating_sub(*rhs as u32)) as i32,
+                    ));
+                }
+                Operation::Binary(BinaryOp::SignedSaturatingAdd) => {
+                    operations.extend(materialize_i32(dst, lhs.saturating_add(*rhs)));
+                }
+                Operation::Binary(BinaryOp::SignedSaturatingSub) => {
+                    operations.extend(materialize_i32(dst, lhs.saturating_sub(*rhs)));
+                }
                 Operation::Select => {
                     operations.extend(lower_select(
                         dst,
@@ -1435,8 +1460,11 @@ fn lower_immediate(
         | BinaryOp::SignedMax
         | BinaryOp::UnsignedMin
         | BinaryOp::UnsignedMax => return Err("SPU min/max use compare and select lowering".into()),
-        BinaryOp::UnsignedSaturatingAdd => {
-            return Err("SPU saturating add uses compare and mask lowering".into())
+        BinaryOp::UnsignedSaturatingAdd
+        | BinaryOp::UnsignedSaturatingSub
+        | BinaryOp::SignedSaturatingAdd
+        | BinaryOp::SignedSaturatingSub => {
+            return Err("SPU saturating arithmetic uses compare and mask lowering".into())
         }
     };
     let immediate = match op {
@@ -1455,7 +1483,7 @@ fn immediate_value(op: BinaryOp, value: i32, constant_is_lhs: bool) -> Option<i3
     if is_minmax(op) {
         return None;
     }
-    if op == BinaryOp::UnsignedSaturatingAdd {
+    if is_saturating(op) {
         return None;
     }
     if op == BinaryOp::Mul {
@@ -1521,8 +1549,11 @@ fn lower_binary_register(
         | BinaryOp::SignedMax
         | BinaryOp::UnsignedMin
         | BinaryOp::UnsignedMax => return Err("SPU min/max use compare and select lowering".into()),
-        BinaryOp::UnsignedSaturatingAdd => {
-            return Err("SPU saturating add uses compare and mask lowering".into())
+        BinaryOp::UnsignedSaturatingAdd
+        | BinaryOp::UnsignedSaturatingSub
+        | BinaryOp::SignedSaturatingAdd
+        | BinaryOp::SignedSaturatingSub => {
+            return Err("SPU saturating arithmetic uses compare and mask lowering".into())
         }
         BinaryOp::LShr | BinaryOp::AShr => {
             return Err("variable right shifts require a negated count register".into())
@@ -1534,6 +1565,16 @@ fn is_minmax(op: BinaryOp) -> bool {
     matches!(
         op,
         BinaryOp::SignedMin | BinaryOp::SignedMax | BinaryOp::UnsignedMin | BinaryOp::UnsignedMax
+    )
+}
+
+fn is_saturating(op: BinaryOp) -> bool {
+    matches!(
+        op,
+        BinaryOp::UnsignedSaturatingAdd
+            | BinaryOp::UnsignedSaturatingSub
+            | BinaryOp::SignedSaturatingAdd
+            | BinaryOp::SignedSaturatingSub
     )
 }
 
@@ -1665,6 +1706,103 @@ fn lower_unsigned_saturating_add(
         format!("or ${destination},${sum},${destination}"),
     ];
     free_temps.insert(sum);
+    Ok(operations)
+}
+
+fn lower_unsigned_saturating_sub(
+    destination: usize,
+    lhs: usize,
+    rhs: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    let underflow = allocate_scratch(next_temp, free_temps)
+        .map_err(|_| "unsigned saturating sub needs one additional caller-saved SPU register")?;
+    // Compare before overwriting lhs with the wrapped difference. Invert the
+    // all-ones underflow mask, then clear the wrapped result without relying on
+    // a zero register (SPU $0 is the link register).
+    let operations = vec![
+        format!("clgt ${underflow},${rhs},${lhs}"),
+        format!("sf ${destination},${rhs},${lhs}"),
+        format!("nor ${underflow},${underflow},${underflow}"),
+        format!("and ${destination},${destination},${underflow}"),
+    ];
+    free_temps.insert(underflow);
+    Ok(operations)
+}
+
+fn lower_saturating(
+    op: BinaryOp,
+    destination: usize,
+    lhs: usize,
+    rhs: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    match op {
+        BinaryOp::UnsignedSaturatingAdd => {
+            lower_unsigned_saturating_add(destination, lhs, rhs, next_temp, free_temps)
+        }
+        BinaryOp::UnsignedSaturatingSub => {
+            lower_unsigned_saturating_sub(destination, lhs, rhs, next_temp, free_temps)
+        }
+        BinaryOp::SignedSaturatingAdd | BinaryOp::SignedSaturatingSub => {
+            lower_signed_saturating(op, destination, lhs, rhs, next_temp, free_temps)
+        }
+        _ => Err("expected a saturating arithmetic operation".into()),
+    }
+}
+
+fn lower_signed_saturating(
+    op: BinaryOp,
+    destination: usize,
+    lhs: usize,
+    rhs: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    let error = "signed saturating arithmetic needs three additional caller-saved SPU registers";
+    let result = allocate_scratch(next_temp, free_temps).map_err(|_| error)?;
+    let overflow = match allocate_scratch(next_temp, free_temps) {
+        Ok(register) => register,
+        Err(_) => {
+            free_temps.insert(result);
+            return Err(error.into());
+        }
+    };
+    let auxiliary = match allocate_scratch(next_temp, free_temps) {
+        Ok(register) => register,
+        Err(_) => {
+            free_temps.insert(result);
+            free_temps.insert(overflow);
+            return Err(error.into());
+        }
+    };
+
+    let mut operations = match op {
+        BinaryOp::SignedSaturatingAdd => vec![
+            format!("a ${result},${lhs},${rhs}"),
+            format!("xor ${overflow},${lhs},${result}"),
+            format!("xor ${auxiliary},${rhs},${result}"),
+        ],
+        BinaryOp::SignedSaturatingSub => vec![
+            format!("sf ${result},${rhs},${lhs}"),
+            format!("xor ${overflow},${lhs},${rhs}"),
+            format!("xor ${auxiliary},${lhs},${result}"),
+        ],
+        _ => return Err("expected signed saturating arithmetic".into()),
+    };
+    operations.extend([
+        format!("and ${overflow},${overflow},${auxiliary}"),
+        format!("rotmai ${overflow},${overflow},-31"),
+        format!("rotmai ${auxiliary},${lhs},-31"),
+        format!("or ${destination},${result},${result}"),
+        format!("ilhu ${result},32767"),
+        format!("iohl ${result},-1"),
+        format!("xor ${auxiliary},${auxiliary},${result}"),
+        format!("selb ${destination},${destination},${auxiliary},${overflow}"),
+    ]);
+    free_temps.extend([result, overflow, auxiliary]);
     Ok(operations)
 }
 
@@ -1983,6 +2121,18 @@ mod tests {
     fn saturating_add_ir(lhs: &str, rhs: &str) -> String {
         format!(
             "define noundef i32 @f(i32 noundef %a, i32 noundef %b) {{\nstart:\n  %result = tail call noundef i32 @llvm.uadd.sat.i32(i32 {lhs}, i32 {rhs})\n  ret i32 %result\n}}\n"
+        )
+    }
+
+    fn saturating_sub_ir(lhs: &str, rhs: &str) -> String {
+        format!(
+            "define noundef i32 @f(i32 noundef %a, i32 noundef %b) {{\nstart:\n  %result = tail call noundef i32 @llvm.usub.sat.i32(i32 {lhs}, i32 {rhs})\n  ret i32 %result\n}}\n"
+        )
+    }
+
+    fn signed_saturating_ir(intrinsic: &str, lhs: &str, rhs: &str) -> String {
+        format!(
+            "define noundef i32 @f(i32 noundef %a, i32 noundef %b) {{\nstart:\n  %result = tail call noundef i32 @llvm.{intrinsic}.i32(i32 {lhs}, i32 {rhs})\n  ret i32 %result\n}}\n"
         )
     }
 
@@ -2327,6 +2477,66 @@ mod tests {
             assembly.contains("clgt $4,$3,$5\n  lnop\n  or $4,$5,$4"),
             "{assembly}"
         );
+    }
+
+    #[test]
+    fn lowers_unsigned_saturating_sub_and_handles_underflow() {
+        let function = parse_single_i32_binary_function(&saturating_sub_ir("%a", "%b")).unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&function).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  clgt $5,$4,$3\n  lnop\n  sf $3,$4,$3\n  lnop\n  nor $5,$5,$5\n  lnop\n  and $3,$3,$5\n  bi $0\n.size f,.-f\n"
+        );
+
+        let constants = "define i32 @f() {\n  %result = call i32 @llvm.usub.sat.i32(i32 1, i32 2)\n  ret i32 %result\n}\n";
+        let function = parse_single_i32_binary_function(constants).unwrap();
+        assert!(lower_to_spu_assembly(&function)
+            .unwrap()
+            .contains("il $3,0\n  bi $0"));
+
+        let constant_rhs = "define i32 @f(i32 noundef %a) {\n  %result = call i32 @llvm.usub.sat.i32(i32 %a, i32 7)\n  ret i32 %result\n}\n";
+        let function = parse_single_i32_binary_function(constant_rhs).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(
+            assembly.contains("il $4,7\n  lnop\n  clgt $5,$4,$3\n  lnop\n  sf $4,$4,$3"),
+            "{assembly}"
+        );
+        assert!(
+            assembly.contains("nor $5,$5,$5\n  lnop\n  and $4,$4,$5"),
+            "{assembly}"
+        );
+    }
+
+    #[test]
+    fn lowers_signed_saturating_add_and_subtract() {
+        let add = parse_single_i32_binary_function(&signed_saturating_ir("sadd.sat", "%a", "%b"))
+            .unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&add).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  a $5,$3,$4\n  lnop\n  xor $6,$3,$5\n  lnop\n  xor $7,$4,$5\n  lnop\n  and $6,$6,$7\n  lnop\n  rotmai $6,$6,-31\n  lnop\n  rotmai $7,$3,-31\n  lnop\n  or $3,$5,$5\n  lnop\n  ilhu $5,32767\n  lnop\n  iohl $5,-1\n  lnop\n  xor $7,$7,$5\n  lnop\n  selb $3,$3,$7,$6\n  bi $0\n.size f,.-f\n"
+        );
+
+        let sub = parse_single_i32_binary_function(&signed_saturating_ir("ssub.sat", "%a", "%b"))
+            .unwrap();
+        let assembly = lower_to_spu_assembly(&sub).unwrap();
+        assert!(assembly.contains("sf $5,$4,$3"), "{assembly}");
+        assert!(assembly.contains("xor $6,$3,$4"), "{assembly}");
+        assert!(assembly.contains("xor $7,$3,$5"), "{assembly}");
+        assert!(assembly.contains("selb $3,$3,$7,$6"), "{assembly}");
+
+        let constants = "define i32 @f() {\n  %result = call i32 @llvm.sadd.sat.i32(i32 2147483647, i32 1)\n  ret i32 %result\n}\n";
+        let function = parse_single_i32_binary_function(constants).unwrap();
+        assert!(lower_to_spu_assembly(&function)
+            .unwrap()
+            .contains("ilhu $3,32767\n  lnop\n  iohl $3,-1"));
+
+        let constant_rhs = signed_saturating_ir("ssub.sat", "%a", "7");
+        let function = parse_single_i32_binary_function(&constant_rhs).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(
+            assembly.contains("il $5,7\n  lnop\n  sf $6,$5,$3"),
+            "{assembly}"
+        );
+        assert!(assembly.contains("selb $5,$5,$8,$7"), "{assembly}");
     }
 
     #[test]

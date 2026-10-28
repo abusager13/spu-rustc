@@ -230,6 +230,33 @@ run_case saturating-add-no-overflow "$tmp/saturating_add_u32.elf" 12345778
 compile_entry saturating_add_u32 0x80000000,0x80000000
 run_case saturating-add-two-high-values "$tmp/saturating_add_u32.elf" ffffffff
 
+compile_entry saturating_sub_u32 0,1
+run_case saturating-sub-zero-underflow "$tmp/saturating_sub_u32.elf" 00000000
+compile_entry saturating_sub_u32 7,7
+run_case saturating-sub-exact-zero "$tmp/saturating_sub_u32.elf" 00000000
+compile_entry saturating_sub_u32 0xffffffff,1
+run_case saturating-sub-no-underflow "$tmp/saturating_sub_u32.elf" fffffffe
+compile_entry saturating_sub_u32 0x80000000,0x7fffffff
+run_case saturating-sub-crosses-sign-bit "$tmp/saturating_sub_u32.elf" 00000001
+
+compile_entry saturating_add_i32 0x7fffffff,1
+run_case saturating-add-i32-positive-overflow "$tmp/saturating_add_i32.elf" 7fffffff
+compile_entry saturating_add_i32 0x80000000,0xffffffff
+run_case saturating-add-i32-negative-overflow "$tmp/saturating_add_i32.elf" 80000000
+compile_entry saturating_add_i32 10,0xfffffffc
+run_case saturating-add-i32-no-overflow "$tmp/saturating_add_i32.elf" 00000006
+compile_entry saturating_add_i32 0x7fffffff,0xffffffff
+run_case saturating-add-i32-boundary-no-overflow "$tmp/saturating_add_i32.elf" 7ffffffe
+
+compile_entry saturating_sub_i32 0x7fffffff,0xffffffff
+run_case saturating-sub-i32-positive-overflow "$tmp/saturating_sub_i32.elf" 7fffffff
+compile_entry saturating_sub_i32 0x80000000,1
+run_case saturating-sub-i32-negative-overflow "$tmp/saturating_sub_i32.elf" 80000000
+compile_entry saturating_sub_i32 0xfffffffb,7
+run_case saturating-sub-i32-no-overflow "$tmp/saturating_sub_i32.elf" fffffff4
+compile_entry saturating_sub_i32 0x80000000,0xffffffff
+run_case saturating-sub-i32-boundary-no-overflow "$tmp/saturating_sub_i32.elf" 80000001
+
 compile_entry select_i32 10,20
 run_case select-signed-true-arm  "$tmp/select_i32.elf" 0000000a
 compile_entry select_i32 0x80000000,20

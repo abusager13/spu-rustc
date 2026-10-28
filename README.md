@@ -15,7 +15,8 @@ Supported scalar functions have zero to 72 `i32` ABI parameters and straight-
 line `i32` add, subtract, wrapping multiply, bitwise, shift, rotate,
 `leading_zeros`, `trailing_zeros`, `leading_ones`, `trailing_ones`, and
 `count_ones` operations, scalar conditional `select`, unsigned
-`u32::saturating_add`, signed and unsigned `min`/`max`, and signed
+`u32::saturating_add` and `u32::saturating_sub`, signed and unsigned `min`/`max`,
+signed `i32::saturating_add` and `i32::saturating_sub`, and signed
 `i32::wrapping_abs`. Rust `wrapping_shl` and
 `wrapping_shr` mask the shift count to five bits; signed right shifts use
 arithmetic semantics.
@@ -31,15 +32,20 @@ it preserves `i32::MIN` with wrapping semantics.
 Signed and unsigned `min`/`max` use the corresponding SPU compare and `selb`
 instructions to select a result.
 Unsigned `saturating_add` detects a wrapped result with `clgt` and applies an
-overflow mask with `or` to return `u32::MAX` on overflow.
+overflow mask with `or` to return `u32::MAX` on overflow. Unsigned
+`saturating_sub` compares the operands and uses an inverted mask to clear an
+underflowed result to zero without treating the SPU link register as a zero
+register. Signed `i32::saturating_add` and `saturating_sub` detect overflow
+with sign-bit masks and choose the signed limit with `selb`.
 Equality and signed or unsigned comparisons can return Rust `bool`, normalized
 to `0` or `1` in the SPU result register. Functions may also return a
 parameter, an operation result, or any 32-bit literal. Immediate forms are
 used where supported and larger constants are materialized in a register. The
 examples include scalar operations, variable and constant multiplication and
 rotations, leading/trailing zero and one counts, population counts, wrapping
-absolute value, signed and unsigned min/max, saturating addition, conditional
-selection, three- and eight-argument sums, shifts, and signed and unsigned
+absolute value, signed and unsigned min/max, signed and unsigned saturating
+addition and subtraction, conditional selection, three- and eight-argument sums,
+shifts, and signed and unsigned
 comparisons.
 A Rust conditional expression is supported only when host `rustc` lowers it to
 straight-line LLVM `select`; general branches, loops, and `phi` nodes remain

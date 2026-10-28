@@ -92,6 +92,9 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("min_u32", "selb\t$3,$4,$3,$5"),
         ("max_u32", "selb\t$3,$3,$4,$5"),
         ("saturating_add_u32", "clgt\t$3,$3,$5"),
+        ("saturating_sub_u32", "clgt\t$5,$4,$3"),
+        ("saturating_add_i32", "rotmai\t$6,$6,-31"),
+        ("saturating_sub_i32", "rotmai\t$6,$6,-31"),
         ("select_i32", "selb\t$3"),
         ("select_computed_i32", "selb\t$3"),
         ("cmp_eq_u32", "ceq\t$3,$3,$4"),
@@ -305,6 +308,57 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
                     "clgt\t$3,$3,$5",
                     "lnop",
                     "or\t$3,$5,$3",
+                ],
+                name,
+            );
+        }
+        if name == "saturating_sub_u32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "clgt\t$5,$4,$3",
+                    "lnop",
+                    "sf\t$3,$4,$3",
+                    "lnop",
+                    "nor\t$5,$5,$5",
+                    "lnop",
+                    "and\t$3,$3,$5",
+                ],
+                name,
+            );
+        }
+        if name == "saturating_add_i32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "a\t$5,$3,$4",
+                    "xor\t$6,$3,$5",
+                    "xor\t$7,$4,$5",
+                    "and\t$6,$6,$7",
+                    "rotmai\t$6,$6,-31",
+                    "rotmai\t$7,$3,-31",
+                    "ilhu\t$5,32767",
+                    "iohl\t$5,65535",
+                    "xor\t$7,$7,$5",
+                    "selb\t$3,$3,$7,$6",
+                ],
+                name,
+            );
+        }
+        if name == "saturating_sub_i32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "sf\t$5,$4,$3",
+                    "xor\t$6,$3,$4",
+                    "xor\t$7,$3,$5",
+                    "and\t$6,$6,$7",
+                    "rotmai\t$6,$6,-31",
+                    "rotmai\t$7,$3,-31",
+                    "ilhu\t$5,32767",
+                    "iohl\t$5,65535",
+                    "xor\t$7,$7,$5",
+                    "selb\t$3,$3,$7,$6",
                 ],
                 name,
             );

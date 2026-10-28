@@ -47,6 +47,14 @@ sign bit, negative operands, and equal values.
 Unsigned `u32::saturating_add` lowers `llvm.uadd.sat.i32` to an SPU sum,
 unsigned overflow comparison, and all-ones mask. Emulator cases cover overflow,
 a non-overflowing result of `u32::MAX`, and ordinary addition.
+Unsigned `u32::saturating_sub` lowers `llvm.usub.sat.i32` to an SPU subtract,
+unsigned underflow comparison, and inverted-mask clearing to zero. Emulator cases
+cover underflow from zero, exact subtraction, and ordinary subtraction across
+the sign bit.
+Signed `i32::saturating_add` and `saturating_sub` lower `llvm.sadd.sat.i32` and
+`llvm.ssub.sat.i32` through sign-bit overflow masks and select the correct
+`i32::MIN` or `i32::MAX` limit. Emulator cases cover both overflow directions
+and ordinary boundary arithmetic.
 Straight-line LLVM `select i1` with `i32` arms lowers to SPU `selb`. When an
 `icmp` result feeds a select, the compare mask stays all-ones/all-zero; a
 standalone returned Rust `bool` remains normalized to 0 or 1. This does not
@@ -79,11 +87,15 @@ multiplication support.
 ## Future milestones
 
 4. Port and modernize LLVM's historical CellSPU backend, then integrate it
-   with Rust's LLVM backend. The GCC 9.5 cross-`libgccjit` object smoke has
-   proved that backend can create SPU objects; advancing the alternative Rust
-   adapter now requires a library compatible with the current GCC codegen
-   plugin API, then Rust ABI tests. Preserve historical LLVM tests as backend
-   support grows.
+   with Rust's LLVM backend. A follow-up check found that the GCC snapshot
+   pinned by the current `rustc_codegen_gcc` checkout has removed SPU support:
+   `spu*-*-*` is in its unsupported-target list, and the SPU machine description
+   is absent. The separate GCC 9.5 cross-`libgccjit` object smoke proves that
+   the older backend can create SPU objects, but its library is missing 44
+   symbols from the plugin's non-`master` API (and more with its default
+   `master` feature). Advancing that adapter would require restoring or porting
+   the GCC SPU backend and matching the plugin API, then testing Rust ABI
+   behavior. Preserve historical LLVM tests as backend support grows.
 5. Define and implement a Rust SPU target specification, full calling
    convention and data layout, relocations, stack frames, memory operations,
    and linker support; build `core` with `#![no_std]` and `panic=abort`.

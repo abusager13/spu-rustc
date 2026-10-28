@@ -72,10 +72,20 @@ a minimal C API smoke program. This proves cross-target object generation is
 possible with that GCC backend; it does not integrate Rust.
 
 A Rust-backend probe using nightly rustc 1.101.0 and the `rustc_codegen_gcc`
-plugin stopped while loading that GCC 9.5 library: the plugin requires the
-missing `gcc_jit_type_get_restrict` symbol. No Rust code reached code
-generation. The installed PS3 GCC 9.5.0 is configured for SPU C and C++ with
-shared libraries disabled, so it does not itself provide `libgccjit`. A
+plugin stopped while loading that GCC 9.5 library. The default plugin build
+first requires `gcc_jit_type_get_restrict`; building it without the `master`
+feature then fails on the missing `gcc_jit_function_get_return_type` symbol.
+Comparing the no-`master` `gccjit_sys` API against the GCC 9.5 library shows
+44 required symbols are absent, so this is not a one-symbol compatibility
+shim. No Rust code reached code generation. A follow-up inspection of the exact
+GCC commit pinned by the local
+`rustc_codegen_gcc` checkout (`e1c6e07b095d091177376a163da44039475e05e3`)
+found `spu*-*-*` in GCC's unsupported-target list, and the commit does not
+contain `gcc/config/spu/spu.md` or `spu.h` ([pinned `config.gcc`](https://github.com/rust-lang/gcc/blob/e1c6e07b095d091177376a163da44039475e05e3/gcc/config.gcc)).
+That snapshot therefore cannot be configured for SPU by just building a
+cross-`libgccjit`; it needs a restored or ported SPU backend. The installed PS3
+GCC 9.5.0 is configured for SPU C and C++ with shared libraries disabled, so
+it does not itself provide `libgccjit`. A
 separate custom target JSON using `llvm-target: spu-unknown-none` also fails
 with the stock rustc backend before code generation because LLVM 23 has no
 registered SPU target. The pinned stable rustc 1.99.1 additionally requires
@@ -102,11 +112,11 @@ documented gaps.
 
 The current prototype deliberately does not try to masquerade as that backend.
 The GNU SPU toolchain remains the tested assembler/linker and ABI oracle. A
-Rust GCC adapter is a concrete follow-up option because the cross-libgccjit
-object smoke succeeded, but it needs a newer or patched cross libgccjit that
-matches the current Rust backend API, followed by Rust SPU ABI and data-layout
-validation. The scalar prototype remains the only Rust-to-SPU path validated
-end to end in this repository.
+Rust GCC adapter remains a possible route only if the old SPU backend can be
+ported into a current GCC fork, or a different maintained compiler backend is
+found; it also needs a libgccjit API compatible with the Rust plugin, followed
+by Rust SPU ABI and data-layout validation. The scalar prototype remains the
+only Rust-to-SPU path validated end to end in this repository.
 
 The target-specific Rust API will also need to distinguish local-store
 addresses from PPU effective addresses for DMA. The available SPU GCC install
@@ -125,7 +135,9 @@ The current driver:
    sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
    `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
    `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, signed
-   and unsigned `min`/`max`, unsigned `u32::saturating_add`, scalar `select`, or
+   and unsigned `min`/`max`, unsigned `u32::saturating_add` and
+   `u32::saturating_sub`, signed `i32::saturating_add` and
+   `i32::saturating_sub`, scalar `select`, or
    integer comparisons. It returns a parameter, computed `i32`, Rust `bool`, or
    a 32-bit literal.
    Add/subtract, logic, shift, and rotate
@@ -150,6 +162,12 @@ The current driver:
    Unsigned `u32::saturating_add` accepts `llvm.uadd.sat.i32`, adds into a
    temporary, compares the wrapped sum with an addend using `clgt`, and ORs the
    overflow mask into the returned value.
+   Unsigned `u32::saturating_sub` accepts `llvm.usub.sat.i32`, compares before
+   overwriting the left operand, then inverts the underflow mask to clear the
+   result to zero. Signed `i32::saturating_add` and `saturating_sub` accept
+   `llvm.sadd.sat.i32` and `llvm.ssub.sat.i32`; XOR/AND and `rotmai` detect
+   overflow, then `selb` chooses `i32::MIN` or `i32::MAX`. These lowerings use
+   temporary registers and have not been generalized to other widths.
    `select i1` accepts an i1 condition and i32 arms and lowers to `selb`;
    comparison masks used by a select remain all-ones or all-zero. This only
    accepts straight-line `select` instructions and does not lower `br` or `phi`.

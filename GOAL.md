@@ -36,8 +36,11 @@ via SPU `clz`, `u32::trailing_zeros` via compare/negate/and/`clz`, and
 `u32::count_ones` via `cntb`/`sumb`/`xshw`, plus signed `i32::wrapping_abs`,
 signed and unsigned `min`/`max` via compare and select,
 unsigned `u32::saturating_add` via a native sum, carry comparison, and overflow
-mask, and scalar conditional selection through LLVM `select`,
-constants, identity functions, multi-operation code, ABI argument placement,
+mask, unsigned `u32::saturating_sub` via subtract/compare and inverted-mask
+underflow clearing, signed `i32::saturating_add` and `saturating_sub` via
+overflow masks and signed-limit selection, and scalar conditional selection
+through LLVM `select`, constants, identity functions, multi-operation code,
+ABI argument placement,
 liveness-based temporary reuse, and stop-only and scalar-entry ELFs. The scalar
 startup initializes the local-store stack pointer, supplies optional
 image-time argument words, calls the Rust function, posts its result to the

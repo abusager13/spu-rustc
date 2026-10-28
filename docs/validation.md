@@ -192,6 +192,34 @@ in this repository.
    mailbox checks across the complete script, including both selection arms
    and a conditional whose arms compute arithmetic results. General branches,
    loops, and `phi` nodes remain unsupported.
+31. Added unsigned `u32::saturating_sub` lowering from `llvm.usub.sat.i32`.
+   The native sequence compares before overwriting the left operand, subtracts,
+   then inverts the underflow mask to clear the result to zero. It does not use
+   SPU `$0` as a zero register because `$0` is the link register. Object
+   integration tests verified the assembled instructions, and
+   `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 54 unit tests and all
+   three end-to-end tests. The stock emulator passed 78 mailbox checks across
+   the suite, including underflow from zero, exact subtraction, ordinary
+   subtraction, and subtraction across the sign bit. Count-ones checks were
+   skipped because this emulator build leaves `sumb` unimplemented.
+32. Added signed `i32::saturating_add` and `saturating_sub` lowering from
+   `llvm.sadd.sat.i32` and `llvm.ssub.sat.i32`. SPU XOR/AND and `rotmai`
+   instructions detect signed overflow; `selb` selects the appropriate signed
+   limit. Object integration tests assembled and inspected both sequences.
+   `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 55 unit tests and all
+   three end-to-end tests. The stock emulator passed 86 mailbox checks across
+   the suite, including positive and negative overflow, ordinary operations,
+   and no-overflow cases at the signed boundaries. Count-ones execution was
+   skipped because the stock emulator still leaves `sumb` unimplemented.
+33. Rebuilt the pinned `rustc_codegen_gcc` checkout without its `master` feature
+   against nightly rustc 1.101.0 to check compatibility with the locally built
+   GCC 9.5 SPU `libgccjit`. The plugin itself built, but rustc stopped while
+   loading the library at the missing `gcc_jit_function_get_return_type` API;
+   no Rust code reached GCC code generation. Comparing the no-`master` binding
+   API with the library's exported symbols found 44 missing symbols. The
+   default plugin build additionally requires `gcc_jit_type_get_restrict`.
+   The GCC 9.5 object smoke therefore remains a C API proof only, not a Rust
+   codegen path.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
