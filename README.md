@@ -5,6 +5,11 @@ standing project goal and acceptance criteria are in [`GOAL.md`](GOAL.md). It
 proves a narrow first milestone: compile simple `#![no_std]` Rust integer
 functions into native SPU ELF objects.
 
+The `spu-rustc` driver is a temporary validation harness for SPU instruction,
+ELF, and ABI experiments. The primary compiler path is a maintained rustc
+backend and target; the harness will stay limited to small cases that help
+validate that path.
+
 The prototype uses `rustc` on the build host for Rust parsing and type checking,
 lowers a small subset of its LLVM IR to SPU assembly, then invokes GNU `spu-as`
 from the PS3 development toolchain. It does **not** add an official
@@ -117,22 +122,37 @@ cargo run -- --target spu-sony-ps3 --emit=elf \
   --entry-args=0x1234,0x5678 -o add.elf examples/add_u32.rs
 ```
 
-The argument words are constants embedded by startup; the current PPU loader
-does not supply SPU arguments. `--runtime-args` instead forwards up to four
-incoming 32-bit SPU ABI words from `$3` through `$6` to the Rust function. This
-wrapper has an emulator check using register presets. It is not yet verified against
-PSL1GHT's `sysSpuThreadArgument`, which supplies four 64-bit values, and it
-cannot yet pass PPU effective addresses for DMA. The end-to-end tests check ELF
-headers and disassembled instructions. `docs/validation.md` records the tested
-versions and evidence.
+The argument words are constants embedded by startup. `--runtime-args` instead
+forwards up to four incoming 32-bit SPU ABI words from `$3` through `$6` to the
+Rust function; the emulator check seeds those registers directly. The separate
+`--ppu-thread-args` startup adapts up to four incoming 64-bit PSL1GHT thread
+arguments to 32-bit Rust parameters by extracting each low word. Its register
+and conversion sequence is checked in the emulator with distinct high and low
+words, but the PPU loader has not run in RPCS3 or on hardware, so the actual
+PSL1GHT-to-entry behavior remains unverified. This mode cannot pass PPU
+effective addresses for DMA. The end-to-end tests check ELF headers and
+disassembled instructions. `docs/validation.md` records tested versions and
+evidence.
 
 ### Build the experimental PPU loader
 
 A small Rust PPU application with a PSL1GHT C bridge can open one SPU ELF,
-start one SPU thread, join it, and return the thread's exit status. The first
-loader accepts no SPU arguments and expects the SPU image to use `--thread-exit`
-so the PS3 thread group sees the SPU status. It defaults to
-`/app_home/scalar.elf`; an optional PPU argument selects another image path.
+start one SPU thread, join it, and return the thread's exit status. It expects
+the SPU image to use `--thread-exit` so the PS3 thread group sees the SPU
+status. The loader defaults to `/app_home/scalar.elf`; an optional image path
+can be followed by up to four decimal or `0x`-prefixed 64-bit thread argument
+values, which it copies into `sysSpuThreadArgument`.
+For example, a PPU launch can use
+`spu-rustc-loader.elf /app_home/scalar.elf 0x1234 42` to set `arg0` and
+`arg1`, leaving the other two fields zero.
+
+For a scalar SPU entry that consumes these as low 32-bit values, build the
+corresponding image with `--ppu-thread-args`:
+
+```sh
+cargo run -- --target spu-sony-ps3 --emit=elf --ppu-thread-args --thread-exit \
+  -o sum4.elf examples/sum4_u32.rs
+```
 
 ```sh
 cargo run -- --target spu-sony-ps3 --emit=elf --thread-exit \
@@ -140,10 +160,14 @@ cargo run -- --target spu-sony-ps3 --emit=elf --thread-exit \
 make -C ppu-loader PS3DEV=/path/to/ps3dev PSL1GHT=/path/to/psl1ght
 ```
 
-This builds a big-endian PowerPC64 ELFv1 PPU executable. It has only been
-cross-compiled and inspected; it has not been run in RPCS3 or on a PS3. This
-does not make the SPU output a Rust target and does not add PPU-supplied SPU
-arguments, DMA, or general runtime support.
+This builds a big-endian PowerPC64 ELFv1 PPU executable. The argument parser
+and cross-link are tested, but the executable has not been run in RPCS3 or on a
+PS3. The SPU adapter is based on PSL1GHT's documented `main` arguments and the
+installed SPU CRT/compiler ABI; emulator tests validate its instruction-level
+low-word conversion. They do not verify that a PPU-launched thread presents
+the arguments in those registers. The loader does not pass PPU effective
+addresses for DMA. This remains separate from a Rust SPU target and general
+runtime support.
 
 ### Run the SPU emulator check
 
@@ -207,10 +231,11 @@ application toolchain. Its startup supports one scalar function per image,
 with up to 75 image-time argument words (72 registers and three stack slots), and
 returns one word through the outbound mailbox; more than three stack arguments
 are unsupported. The experimental `--runtime-args` mode forwards at most four
-incoming 32-bit argument registers, but has not been matched to PS3's 64-bit
-thread arguments. The minimal PPU loader is build-validated only and has not
-been run; it accepts no SPU arguments. There is no SPU `core` build or SIMD
-API, and local-store access is limited to direct aligned `u32` loads and
+incoming 32-bit argument registers. Its experimental `--ppu-thread-args`
+startup extracts the low 32 bits of up to four incoming 64-bit PSL1GHT thread
+arguments; its emulator cases pass, but the PPU-launched register mapping has
+not been run. There is no SPU `core` build or SIMD API, and local-store access
+is limited to direct aligned `u32` loads and
 stores; DMA, general mailbox operations, and synchronization remain
 unsupported.
 Hardware execution has not been tested. Details and the remaining work are in

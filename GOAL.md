@@ -49,8 +49,11 @@ outbound mailbox, and stops. Local-store access now reads and writes aligned
 `u32` words through 32-bit local-store pointers. Emulator checks exercise loads
 and stores at all four word offsets in a quadword and verify that stores leave
 neighboring words unchanged. A minimal Rust PPU launcher also cross-builds,
-but has not been run in a PS3 emulator or on hardware. This is still a
-host-frontend prototype, not a general Rust target or runtime.
+but has not been run in a PS3 emulator or on hardware. Its SPU startup adapter
+for four 64-bit thread arguments passes emulator tests using seeded registers;
+the PPU-to-SPU runtime mapping is still unverified. The translator is a
+temporary validation harness for ABI and instruction cases, not the planned
+primary compiler.
 
 A separate legacy experiment now has a versioned custom target JSON using the
 historical CellSPU data layout and a repeatable emulator smoke harness. With
@@ -62,5 +65,7 @@ target and runtime acceptance criteria remain open.
 
 The current compiler/backend direction is to port and modernize LLVM's
 historical CellSPU backend, using the PS3 GNU toolchain as the assembler,
-linker, and ABI reference. See [the architecture investigation](docs/architecture.md)
-and [the milestone plan](docs/roadmap.md).
+linker, and ABI reference. That source has been investigated but not yet
+modified or integrated here; the backend port remains future work. See [the
+architecture investigation](docs/architecture.md) and [the milestone
+plan](docs/roadmap.md).

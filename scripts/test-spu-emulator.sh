@@ -56,6 +56,11 @@ cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
     --runtime-args -o "$tmp/runtime_args.elf" examples/add_u32.rs
 
 cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
+    --ppu-thread-args --thread-exit -o "$tmp/ppu_thread_args.elf" examples/add_u32.rs
+cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
+    --ppu-thread-args --thread-exit -o "$tmp/ppu_thread_args4.elf" examples/sum4_u32.rs
+
+cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
     --runtime-args -o "$tmp/load_u32.elf" examples/load_u32.rs
 cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
     --runtime-args -o "$tmp/store_u32.elf" examples/store_u32.rs
@@ -125,6 +130,13 @@ run_case addition-wide "$tmp/add_entry.elf" 1234acf0
 if [[ "${SPU_EMULATOR_HAS_REG_PRESETS:-0}" == "1" ]]; then
     run_case runtime-argument-registers "$tmp/runtime_args.elf" 1234acf0 \
         -r 3=12345678 -r 4=00005678
+    run_case ppu-thread-u64-low-words "$tmp/ppu_thread_args.elf" 11111100 \
+        -r 3=12345678:9abcdef0:0:0 -r 4=fedcba98:76543210:0:0
+    run_case ppu-thread-four-u64-arguments "$tmp/ppu_thread_args4.elf" 0000000f \
+        -r 3=01234567:00000001:0:0 \
+        -r 4=89abcdef:00000002:0:0 \
+        -r 5=fedcba98:00000004:0:0 \
+        -r 6=76543210:00000008:0:0
     run_case local-store-load-word-0 "$tmp/load_u32.elf" 12345678 \
         -L "$tmp/load_words.bin@0x1000" -r 3=00001000
     run_case local-store-load-word-1 "$tmp/load_u32.elf" 89abcdef \

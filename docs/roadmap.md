@@ -92,10 +92,11 @@ emulator executes the zero-argument startup, a register-argument addition, one
 stack-passed argument, and three stack-passed arguments. More than three stack
 arguments remain unsupported. `--runtime-args` now also preserves up to four
 incoming 32-bit values in `$3` through `$6` and forwards them to the Rust
-function; the emulator test seeds those registers directly. This only validates
-the prototype's 32-bit SPU ABI path. It does not validate the PS3 thread
-launcher, whose `sysSpuThreadArgument` carries four 64-bit values, or establish
-a general runtime contract.
+function; the emulator test seeds those registers directly. The separate
+`--ppu-thread-args` startup extracts the low 32 bits from up to four incoming
+64-bit argument registers; emulator cases verify that conversion, while the
+actual PPU launch mapping remains unverified. The translator remains a narrow
+validation harness, with the rustc backend as the primary compiler direction.
 
 ## Milestone 3: wrapping 32-bit multiplication
 
@@ -114,11 +115,20 @@ Added a `#![no_std]` Rust PPU entry point and a small PSL1GHT C bridge. The
 launcher opens an SPU ELF, creates and starts a one-thread group, joins it, reads
 the SPU thread exit status, and returns that status from the PPU application.
 It uses `/app_home/scalar.elf` by default and accepts an optional image path.
+The path can be followed by up to four decimal or hexadecimal 64-bit values,
+which the Rust PPU entry copies into PSL1GHT's `sysSpuThreadArgument` structure.
+This field-passing path is cross-built and parser-tested but has not been
+observed by a running SPU entry point.
 The corresponding SPU image must use the experimental `--thread-exit` startup.
 The launcher cross-compiles and links as an ELFv1 PowerPC64 PPU executable with
 the available nightly Rust PPU target and PSL1GHT. It has not been run in an
 emulator or on PS3 hardware, so loading and exit-status behavior remain
-unverified at runtime. It passes no arguments to the SPU image.
+unverified at runtime. A new experimental SPU startup mode,
+`--ppu-thread-args`, extracts each low 32-bit word from up to four incoming
+64-bit argument registers and passes those words to a scalar Rust function.
+The adapter passes emulator checks with register presets, guided by PSL1GHT's
+documented SPU `main` arguments and the installed SPU CRT/compiler ABI. The
+actual PPU-launched register mapping and loader runtime remain unverified.
 
 ## Future milestones
 
@@ -136,20 +146,27 @@ unverified at runtime. It passes no arguments to the SPU image.
    one route to native Rust-generated SPU code, not a supported project target.
    A normal `#![no_std]` probe using `core` first panicked when vector type
    introspection returned null. A temporary vector-introspection shim got
-   past that point, but codegen then failed while lowering a core aggregate
-   constant; Cargo also could not find target `compiler_builtins`. The old
+   past that point, but codegen then failed while lowering a core byte-array
+   constant: GCC 9.5 lacks `gcc_jit_context_new_array_constructor`, and the
+   compatibility shim returned null for that API. Cargo also could not find
+   target `compiler_builtins`. The old
    compiler rejects `extern "C"` for `arch: "spu"`. Advancing this route
    requires a maintained Rust/GCC pairing, clean API compatibility, vector and
    aggregate lowering, target runtime support, and full Rust ABI validation.
-   Preserve historical LLVM tests as backend support grows.
+   The checked GCC versions do not offer an off-the-shelf pairing: GCC 9.5
+   supplies the SPU backend but not the aggregate-constructor libgccjit APIs;
+   GCC 10.1 rejects SPU, while GCC 12 adds those APIs. Backporting the required
+   libgccjit functionality to GCC 9.5 is the next concrete experiment, subject
+   to measuring the full API surface through a `core` build. Preserve
+   historical LLVM tests as backend support grows.
 6. Define and implement a Rust SPU target specification, full calling
    convention and data layout, relocations, stack frames, memory operations,
    and linker support; build `core` with `#![no_std]` and `panic=abort`.
-7. Run the PPU launcher in RPCS3 and, when available, on PS3 hardware. Then
-   adapt its four 64-bit `sysSpuThreadArgument` values to a defined Rust SPU
-   entry ABI, check local-store boundaries, and transfer PPU effective
-   addresses through DMA. Replace baked-in argument words and the single-word
-   result with a tested PPU-supplied argument and result protocol.
+7. Run the PPU launcher in RPCS3 and, when available, on PS3 hardware. Validate
+   `--ppu-thread-args` against the actual entry ABI, check local-store
+   boundaries, and transfer PPU effective addresses through DMA. Replace
+   baked-in argument words and the single-word result with a tested
+   PPU-supplied argument and result protocol.
 8. Add target-specific Rust APIs for SIMD and the MFC DMA, mailbox, and
    synchronization operations. Keep unsafe hardware interfaces separate from
    portable `core` functionality.

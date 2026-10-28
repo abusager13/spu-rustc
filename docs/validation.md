@@ -393,8 +393,13 @@ in this repository.
    A separate temporary shim implemented vector introspection against GCC
    9.5's internal JIT type objects and got past that panic; the next run failed
    while lowering a core aggregate constant, with null GCC JIT values and field
-   types. Cargo also reported that it could not find `compiler_builtins` for the
-   target. No `core`-using function was produced or run. These checks show
+   types. Follow-up instrumentation traced the first null value to
+   `gcc_jit_context_new_array_constructor`: GCC 9.5 does not export this newer
+   API, and the temporary compatibility library supplied a no-op null-returning
+   stub for it. Consequently, byte-array constants reach the backend as null
+   before the containing aggregate is built. Cargo also reported that it could
+   not find `compiler_builtins` for the target. No `core`-using function was
+   produced or run. These checks show
    progress on a narrow codegen route while leaving the target backend, C ABI,
    and `core` support unresolved.
 49. Added `experiments/legacy-rustc/` with the custom target JSON, `#![no_core]`
@@ -418,6 +423,34 @@ in this repository.
    expected mailbox words. The script skipped population-count cases because
    this emulator build leaves `sumb` unimplemented. No hardware or PS3 PPU
    launcher execution was tested.
+51. Extended the Rust PPU loader to parse up to four decimal or `0x`-prefixed
+   `u64` arguments after an optional image path and pass them through the C
+   bridge into PSL1GHT's `sysSpuThreadArgument` fields. Its four parser and
+   argument-count tests
+   passed. `make -C ppu-loader PS3DEV=/tmp/ps3dev/ps3dev
+   PSL1GHT=/tmp/psl1ght-install` cross-built and linked the loader; `ppu-readelf`
+   confirmed a big-endian ELF64 PowerPC64 executable with ABI v1, and `ppu-nm`
+   found the Rust `main`, C bridge, and PSL1GHT `_start`. This verifies argument
+   parsing and field passing at build time only. The mapping from those 64-bit
+   syscall fields to the SPU entry registers, PPU loading, and runtime behavior
+   remain unverified.
+52. Added an experimental `--ppu-thread-args` startup adapter. It converts up
+   to four incoming 64-bit argument registers to the low 32-bit words expected
+   by scalar Rust parameters, using `shlqbyi ...,4` as observed in the
+   installed SPU GCC ABI. The E2E test confirmed the emitted conversion and
+   call sequence. The emulator passed two-argument and four-argument cases
+   with distinct high and low words (`0x11111100` and `0x0000000f`), alongside
+   the existing enabled cases. These register presets validate the SPU
+   adapter, not the PPU syscall path: the loader has not run in RPCS3 or on
+   hardware, and the runtime mapping from `sysSpuThreadArgument` to entry
+   registers remains unverified.
+53. Compared the relevant GCC versions for the legacy `core` route. GCC 10.1's
+   `config.gcc` rejects `spu*-*-*`; the installed GCC 9.5 build has the SPU
+   backend but its `libgccjit` lacks aggregate constructor APIs. GCC 12 release
+   notes add those constructor and rvalue-global-initializer APIs, while its
+   config also rejects SPU. There is no tested stock version pairing; the
+   likely compatibility experiment is to backport the required JIT APIs to the
+   SPU-capable GCC 9.5 build. This route has not yet been implemented.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

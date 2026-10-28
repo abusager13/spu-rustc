@@ -21,6 +21,7 @@ struct Config {
     emit: Emit,
     entry_args: Option<Vec<u32>>,
     runtime_args: bool,
+    ppu_thread_args: bool,
     thread_exit: bool,
     target: String,
     rustc: OsString,
@@ -66,8 +67,16 @@ fn run() -> Result<(), String> {
     if config.runtime_args && config.emit != Emit::Executable {
         return Err("--runtime-args is only valid with --emit=elf".into());
     }
+    if config.ppu_thread_args && config.emit != Emit::Executable {
+        return Err("--ppu-thread-args is only valid with --emit=elf".into());
+    }
     if config.runtime_args && config.entry_args.is_some() {
         return Err("--runtime-args cannot be combined with --entry-args".into());
+    }
+    if config.ppu_thread_args && (config.runtime_args || config.entry_args.is_some()) {
+        return Err(
+            "--ppu-thread-args cannot be combined with --runtime-args or --entry-args".into(),
+        );
     }
     if config.thread_exit && config.emit != Emit::Executable {
         return Err("--thread-exit is only valid with --emit=elf".into());
@@ -148,13 +157,29 @@ fn run() -> Result<(), String> {
                     "--runtime-args cannot be used with a stop-only _start function".into(),
                 );
             }
+            if config.ppu_thread_args && runtime_entry.is_none() {
+                return Err(
+                    "--ppu-thread-args cannot be used with a stop-only _start function".into(),
+                );
+            }
             if config.thread_exit && runtime_entry.is_none() {
                 return Err(
                     "--thread-exit requires a scalar Rust function, not a stop-only _start".into(),
                 );
             }
             let startup = if let Some((function_symbol, parameter_count)) = runtime_entry {
-                if config.runtime_args {
+                if config.ppu_thread_args {
+                    if parameter_count > llvm_ir::SPU_PPU_THREAD_ARGUMENTS {
+                        return Err(format!(
+                            "--ppu-thread-args supports at most four 32-bit scalar or local-store address arguments; found {parameter_count}"
+                        ));
+                    }
+                    Some(llvm_ir::lower_ppu_thread_startup(
+                        function_symbol,
+                        parameter_count,
+                        config.thread_exit,
+                    ))
+                } else if config.runtime_args {
                     if parameter_count > 4 {
                         return Err(format!(
                             "--runtime-args supports at most four 32-bit scalar or address arguments in registers $3 through $6; found {parameter_count}"
@@ -254,6 +279,7 @@ fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Config, String> {
     let mut emit = Emit::Object;
     let mut entry_args = None;
     let mut runtime_args = false;
+    let mut ppu_thread_args = false;
     let mut thread_exit = false;
     let mut target = None;
     let mut rustc = env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
@@ -285,6 +311,8 @@ fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Config, String> {
             entry_args = Some(parse_entry_args(&OsString::from(value))?);
         } else if arg == "--runtime-args" {
             runtime_args = true;
+        } else if arg == "--ppu-thread-args" {
+            ppu_thread_args = true;
         } else if arg == "--thread-exit" {
             thread_exit = true;
         } else if arg == "-o" {
@@ -327,6 +355,7 @@ fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Config, String> {
         emit,
         entry_args,
         runtime_args,
+        ppu_thread_args,
         thread_exit,
         target: target.to_string_lossy().into_owned(),
         rustc,
@@ -402,14 +431,16 @@ fn parse_entry_args(value: &OsString) -> Result<Vec<u32>, String> {
 
 fn print_help() {
     println!(
-        "Usage: spu-rustc --target spu-sony-ps3 [--emit obj|asm|elf] [--entry-args WORD,... | --runtime-args] [--thread-exit] [-o OUTPUT] [--rustc PATH] [--assembler PATH] [--linker PATH] INPUT.rs\n\n\
+        "Usage: spu-rustc --target spu-sony-ps3 [--emit obj|asm|elf] [--entry-args WORD,... | --runtime-args | --ppu-thread-args] [--thread-exit] [-o OUTPUT] [--rustc PATH] [--assembler PATH] [--linker PATH] INPUT.rs\n\n\
          Compiles a restricted #![no_std] Rust function through a limited LLVM IR subset.\n\
          rustc is used as the host-side frontend; spu-as emits an EM_SPU object.\n\
          --emit=elf links a stop-only _start or a scalar function through minimal startup.\n\
          --entry-args supplies comma-separated decimal or hexadecimal 32-bit words\n\
          for up to 72 SPU ABI argument registers and three stack-passed words.\n\
          --runtime-args forwards incoming 32-bit words or local-store addresses in $3 through $6\n\
-         to a function with up to four parameters; it does not validate the PS3 u64 argument ABI.\n\
+         to a function with up to four parameters.\n\
+         --ppu-thread-args adapts up to four incoming PSL1GHT u64 thread arguments to 32-bit words\n\
+         in $3 through $6 by keeping each argument's low 32 bits.\n\
          --thread-exit uses the PSL1GHT stop 0x102 exit convention after the result.\n\
          This is an experimental proof of concept, not a rustc target specification."
     );

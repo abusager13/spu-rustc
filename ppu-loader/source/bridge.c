@@ -25,7 +25,8 @@ enum {
     LOADER_IMAGE_CLOSE_FAILED = 9,
 };
 
-int32_t spu_loader_run(const char *path, int32_t *exit_status)
+int32_t spu_loader_run(const char *path, const uint64_t *thread_arguments,
+                       int32_t *exit_status)
 {
     sysSpuImage image;
     sys_spu_group_t group = 0;
@@ -61,6 +62,10 @@ int32_t spu_loader_run(const char *path, int32_t *exit_status)
     sysSpuThreadAttributeInitialize(thread_attributes);
     sysSpuThreadAttributeName(thread_attributes, "rust-spu-thread");
     sysSpuThreadArgumentInitialize(arguments);
+    arguments.arg0 = thread_arguments[0];
+    arguments.arg1 = thread_arguments[1];
+    arguments.arg2 = thread_arguments[2];
+    arguments.arg3 = thread_arguments[3];
     if (sysSpuThreadInitialize(&thread, group, 0, &image,
                                &thread_attributes, &arguments) != 0) {
         result = LOADER_THREAD_CREATE_FAILED;

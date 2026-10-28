@@ -1,6 +1,7 @@
 use std::collections::{BTreeSet, HashMap};
 
 pub const SPU_ABI_REGISTER_ARGUMENTS: usize = 72;
+pub const SPU_PPU_THREAD_ARGUMENTS: usize = 4;
 pub const MAX_SUPPORTED_STACK_ARGUMENTS: usize = 3;
 pub const MAX_SUPPORTED_SCALAR_ARGUMENTS: usize =
     SPU_ABI_REGISTER_ARGUMENTS + MAX_SUPPORTED_STACK_ARGUMENTS;
@@ -2599,6 +2600,25 @@ pub fn lower_runtime_startup_passthrough_with_exit(
     )
 }
 
+pub fn lower_ppu_thread_startup(
+    function_symbol: &str,
+    parameter_count: usize,
+    thread_exit: bool,
+) -> String {
+    let stop_code = if thread_exit { "0x102" } else { "0" };
+    let mut body = String::from("  ilhu $1,4\n  lnop\n  il $2,0\n");
+    for argument_index in 0..parameter_count {
+        let register = argument_index + 3;
+        body.push_str(&format!("  lnop\n  shlqbyi ${register},${register},4\n"));
+    }
+    body.push_str(&format!(
+        "  lnop\n  brsl $0,{function_symbol}\n  wrch $ch28,$3\n  lnop\n  stop {stop_code}\n"
+    ));
+    format!(
+        ".text\n.p2align 3\n.globl _start\n.type _start,@function\n_start:\n{body}.size _start,.-_start\n"
+    )
+}
+
 impl Program {
     pub fn symbol(&self) -> &str {
         match self {
@@ -3527,6 +3547,14 @@ mod tests {
     fn runtime_startup_can_use_the_psl1ght_spu_thread_exit_stop_code() {
         let startup = lower_runtime_startup_with_exit("scalar_entry", &[], true);
         assert!(startup.contains("wrch $ch28,$3\n  lnop\n  stop 0x102\n"));
+    }
+
+    #[test]
+    fn ppu_thread_startup_extracts_the_low_words_of_u64_arguments() {
+        assert_eq!(
+            lower_ppu_thread_startup("sum4_u32", 4, true),
+            ".text\n.p2align 3\n.globl _start\n.type _start,@function\n_start:\n  ilhu $1,4\n  lnop\n  il $2,0\n  lnop\n  shlqbyi $3,$3,4\n  lnop\n  shlqbyi $4,$4,4\n  lnop\n  shlqbyi $5,$5,4\n  lnop\n  shlqbyi $6,$6,4\n  lnop\n  brsl $0,sum4_u32\n  wrch $ch28,$3\n  lnop\n  stop 0x102\n.size _start,.-_start\n"
+        );
     }
 
     #[test]

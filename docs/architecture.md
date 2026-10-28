@@ -129,10 +129,26 @@ compatibility implementation, the normal `#![no_std]` probe using
 `u32::wrapping_add`
 panicked on GCC JIT's `u8x2` type. A separate temporary vector-introspection
 shim got past that point, but codegen then failed while lowering a core
-aggregate constant with null GCC JIT values. Cargo also reported that it could
-not find target `compiler_builtins`. The old compiler rejects `extern "C"` for
-this custom architecture. These results and the exact scope are recorded in
+aggregate constant with null GCC JIT values. Instrumentation traced the first
+null value to GCC 9.5's missing `gcc_jit_context_new_array_constructor` API; the
+temporary compatibility library returned null from its no-op stub, so byte
+constants could not be represented. Cargo also reported that it could not find
+target `compiler_builtins`. The old compiler rejects `extern "C"` for this
+custom architecture. These results and the exact scope are recorded in
 `docs/validation.md`.
+
+There is no stock GCC release pairing in the checked versions that supplies
+both sides of this experiment: the installed GCC 9.5 SPU backend predates the
+libgccjit aggregate-constructor APIs, GCC 10.1's target configuration already
+rejects `spu*-*-*`, and GCC 12 added the aggregate constructors and rvalue
+global initialization that the Rust backend expects. The exact GCC 10.1
+unsupported-target entry is in [`config.gcc`](https://github.com/gcc-mirror/gcc/blob/releases/gcc-10.1.0/gcc/config.gcc#L253-L291);
+the API additions are listed in the [GCC 12 release notes](https://gcc.gnu.org/gcc-12/changes.html)
+and declared in the [GCC 12 libgccjit header](https://github.com/gcc-mirror/gcc/blob/releases/gcc-12.1.0/gcc/jit/libgccjit.h#L867-L939).
+This makes backporting the required libgccjit APIs to the SPU-capable GCC 9.5
+build a concrete next experiment. It remains an untested direction: the
+complete API surface needed to compile `core` must be established from actual
+builds, and target `compiler_builtins` plus the Rust ABI still need support.
 
 The GCC 9.5 SPU [machine description](https://github.com/gcc-mirror/gcc/blob/releases/gcc-9.5.0/gcc/config/spu/spu.md)
 models the integer arithmetic pipe separately from `lnop`'s second pipe. Its
@@ -246,9 +262,14 @@ The current driver:
    `--runtime-args` leaves incoming `$3` through `$6` intact and forwards them
    to a function with up to four 32-bit scalar or local-store address
    parameters. Its optional emulator test uses the emulator's `-r` register
-   presets. This does not yet match or verify
-   PSL1GHT's four 64-bit `sysSpuThreadArgument` fields, PPU effective addresses,
-   or a real PPU-launched SPU thread.
+   presets. The separate `--ppu-thread-args` startup shifts each of up to four
+   incoming registers left by four bytes to extract the low 32 bits of the
+   corresponding PSL1GHT `u64` thread argument, then calls a scalar Rust
+   function. Emulator cases verify the extracted values for two and four
+   arguments. This adapter follows PSL1GHT's documented SPU `main` arguments
+   plus the installed SPU CRT/compiler ABI evidence; the actual PPU syscall to
+   entry-register mapping has not been observed in a running thread. It does
+   not pass PPU effective addresses for DMA.
 
 The host LLVM data layout is ignored. These hand-coded ABI assumptions cover
 only the accepted scalar `i32` operations, `i1` comparison results, and up to
@@ -291,10 +312,14 @@ The `ppu-loader/` prototype is a separate `#![no_std]` Rust PPU executable with
 a small C bridge to PSL1GHT. It opens one SPU ELF, creates a one-thread group,
 starts and joins it, retrieves the thread exit status, and returns that value.
 The default image path is `/app_home/scalar.elf`; the PPU program can also use
-an argv path. Its ELFv1 PPU executable cross-builds with nightly Rust and
-PSL1GHT, but has not been run in RPCS3 or on hardware. The thread argument
-structure is all zeros, and this does not validate the `--runtime-args` path,
-map PPU effective addresses into SPU local store, or perform DMA. See
+an argv path followed by up to four decimal or `0x`-prefixed 64-bit values,
+which it copies into PSL1GHT's `sysSpuThreadArgument` fields. Its ELFv1 PPU
+executable cross-builds with nightly Rust and PSL1GHT, but has not been run in
+RPCS3 or on hardware. A `--ppu-thread-args` adapter extracts the low 32-bit
+word from up to four 64-bit incoming arguments and emulator tests exercise
+those conversions, but this does not prove the PPU syscall's runtime
+argument-to-register mapping. It does not map PPU effective addresses into SPU
+local store or perform DMA. See
 `docs/validation.md` for the build evidence and current boundaries.
 
 ## Why not claim a full target yet?
