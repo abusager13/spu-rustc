@@ -45,6 +45,7 @@ enum Operation {
 enum BinaryOp {
     Add,
     Sub,
+    Mul,
     And,
     Or,
     Xor,
@@ -393,6 +394,7 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
         let op = match mnemonic {
             "add" => BinaryOp::Add,
             "sub" => BinaryOp::Sub,
+            "mul" => BinaryOp::Mul,
             "and" => BinaryOp::And,
             "or" => BinaryOp::Or,
             "xor" => BinaryOp::Xor,
@@ -525,7 +527,17 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                         {
                             std::mem::swap(&mut lhs, &mut rhs);
                         }
-                        operations.push(lower_binary_register(op, dst, lhs, rhs)?);
+                        if op == BinaryOp::Mul {
+                            operations.extend(lower_multiply(
+                                dst,
+                                lhs,
+                                rhs,
+                                &mut next_temp,
+                                &mut free_temps,
+                            )?);
+                        } else {
+                            operations.push(lower_binary_register(op, dst, lhs, rhs)?);
+                        }
                     }
                     Operation::Compare(predicate) => {
                         operations.extend(lower_compare(predicate, dst, lhs_reg, rhs_reg));
@@ -546,6 +558,16 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                         return Err(format!(
                             "constant shift amount {constant} is outside the SPU 0..31 immediate range"
                         ));
+                    }
+                    Operation::Binary(BinaryOp::Mul) => {
+                        operations.extend(materialize_i32(dst, *constant));
+                        operations.extend(lower_multiply(
+                            dst,
+                            source,
+                            dst,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
                     }
                     Operation::Binary(op) => {
                         operations
@@ -582,6 +604,15 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                                     &mut free_temps,
                                 )?);
                             }
+                        } else if op == BinaryOp::Mul {
+                            operations.extend(materialize_i32(dst, *constant));
+                            operations.extend(lower_multiply(
+                                dst,
+                                dst,
+                                source,
+                                &mut next_temp,
+                                &mut free_temps,
+                            )?);
                         } else {
                             operations
                                 .extend(lower_constant_binary(op, dst, source, *constant, true)?);
@@ -664,6 +695,7 @@ fn lower_immediate(
     };
     let instruction = match op {
         BinaryOp::Add | BinaryOp::Sub => "ai",
+        BinaryOp::Mul => return Err("SPU multiply has no immediate form".into()),
         BinaryOp::And => "andi",
         BinaryOp::Or => "ori",
         BinaryOp::Xor => "xori",
@@ -681,6 +713,9 @@ fn lower_immediate(
 }
 
 fn immediate_value(op: BinaryOp, value: i32, constant_is_lhs: bool) -> Option<i32> {
+    if op == BinaryOp::Mul {
+        return None;
+    }
     if matches!(op, BinaryOp::Shl | BinaryOp::LShr | BinaryOp::AShr) {
         return (!constant_is_lhs && (0..=31).contains(&value)).then_some(value);
     }
@@ -726,6 +761,9 @@ fn lower_binary_register(
         BinaryOp::Add => format!("a ${destination},${lhs},${rhs}"),
         // SPU `sf rt, ra, rb` computes rb - ra.
         BinaryOp::Sub => format!("sf ${destination},${rhs},${lhs}"),
+        BinaryOp::Mul => {
+            return Err("full-width SPU multiply requires a multi-instruction expansion".into())
+        }
         BinaryOp::And => format!("and ${destination},${lhs},${rhs}"),
         BinaryOp::Or => format!("or ${destination},${lhs},${rhs}"),
         BinaryOp::Xor => format!("xor ${destination},${lhs},${rhs}"),
@@ -734,6 +772,52 @@ fn lower_binary_register(
             return Err("variable right shifts require a negated count register".into())
         }
     })
+}
+
+fn lower_multiply(
+    destination: usize,
+    lhs: usize,
+    rhs: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    // The SPU multiply instructions operate on halfwords. The low 32 bits of
+    // a full i32 product are the low-halfword product plus both cross products
+    // shifted left by 16 bits. mpyh already returns that shifted cross product.
+    let error = "full-width multiply needs two additional caller-saved SPU registers";
+    let cross_lhs_rhs = allocate_scratch(next_temp, free_temps).map_err(|_| error)?;
+    let cross_rhs_lhs = match allocate_scratch(next_temp, free_temps) {
+        Ok(register) => register,
+        Err(_) => {
+            free_temps.insert(cross_lhs_rhs);
+            return Err(error.into());
+        }
+    };
+    let operations = vec![
+        format!("mpyh ${cross_lhs_rhs},${lhs},${rhs}"),
+        format!("mpyh ${cross_rhs_lhs},${rhs},${lhs}"),
+        format!("mpyu ${destination},${lhs},${rhs}"),
+        format!("a ${cross_lhs_rhs},${cross_lhs_rhs},${cross_rhs_lhs}"),
+        format!("a ${destination},${destination},${cross_lhs_rhs}"),
+    ];
+    free_temps.insert(cross_lhs_rhs);
+    free_temps.insert(cross_rhs_lhs);
+    Ok(operations)
+}
+
+fn allocate_scratch(
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<usize, String> {
+    if let Some(register) = free_temps.pop_first() {
+        Ok(register)
+    } else if *next_temp < 80 {
+        let register = *next_temp;
+        *next_temp += 1;
+        Ok(register)
+    } else {
+        Err("no caller-saved SPU scratch register is available".into())
+    }
 }
 
 fn lower_variable_shift(
@@ -930,6 +1014,43 @@ mod tests {
         assert!(lower_to_spu_assembly(&function)
             .unwrap()
             .contains("sf $3,$4,$3"));
+    }
+
+    #[test]
+    fn lowers_wrapping_multiply_with_spu_halfword_products() {
+        let function = parse_single_i32_binary_function(&ir("mul", "%a, %b")).unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&function).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  mpyh $5,$3,$4\n  lnop\n  mpyh $6,$4,$3\n  lnop\n  mpyu $3,$3,$4\n  lnop\n  a $5,$5,$6\n  lnop\n  a $3,$3,$5\n  bi $0\n.size f,.-f\n"
+        );
+    }
+
+    #[test]
+    fn materializes_multiplication_constants_before_using_scratch_registers() {
+        for operands in ["%a, 305419896", "305419896, %a"] {
+            let function =
+                parse_single_i32_binary_function(&one_param_ir("mul", operands)).unwrap();
+            let assembly = lower_to_spu_assembly(&function).unwrap();
+            assert!(assembly.contains("ilhu $4,4660\n  lnop\n  iohl $4,22136"));
+            assert!(assembly.contains("mpyu $4,"));
+            assert!(assembly.contains("or $3,$4,$4"));
+        }
+    }
+
+    #[test]
+    fn multiplication_uses_scratch_registers_after_all_abi_argument_registers() {
+        let params = (0..72)
+            .map(|index| format!("i32 %a{index}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let module = format!(
+            "define i32 @f({params}) {{\n  %product = mul i32 %a70, %a71\n  ret i32 %product\n}}\n"
+        );
+        let function = parse_single_i32_binary_function(&module).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(assembly.contains("mpyh $75,$73,$74"));
+        assert!(assembly.contains("mpyh $76,$74,$73"));
+        assert!(assembly.contains("mpyu $3,$73,$74"));
     }
 
     #[test]

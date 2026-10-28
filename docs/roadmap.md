@@ -34,25 +34,36 @@ zero-argument scalar startup and an argument-taking Rust addition image. The
 argument words are baked into startup, so this is not yet a PPU loader or a
 general runtime contract.
 
-## Remaining milestones
+## Milestone 3: wrapping 32-bit multiplication
 
-1. Port and modernize LLVM's historical CellSPU backend, then integrate it
+Implemented and validated for variable and constant operands. The backend
+forms the low 32 bits from two cross-halfword `mpyh` products, one low-halfword
+`mpyu` product, and two wrapping additions, following the sequence emitted by
+the installed SPU GCC reference. Native object tests check the instruction
+sequence; emulator tests cover full-width cross products, overflow, and a
+constant multiplier. Signed and unsigned wrapping multiplication share the
+same low-word result. This does not add general multiply-accumulate or vector
+multiplication support.
+
+## Future milestones
+
+4. Port and modernize LLVM's historical CellSPU backend, then integrate it
    with Rust's LLVM backend. Revisit a GCC codegen adapter only if a concrete
    cross-`libgccjit` build proves it can create SPU objects. Preserve historical
    LLVM tests and add Rust ABI tests as backend support grows.
-2. Define and implement a Rust SPU target specification, full calling
+5. Define and implement a Rust SPU target specification, full calling
    convention and data layout, relocations, stack frames, memory operations,
    and linker support; build `core` with `#![no_std]` and `panic=abort`.
-3. Implement a Rust PPU loader for SPU ELF images. Validate image loading,
+6. Implement a Rust PPU loader for SPU ELF images. Validate image loading,
    arguments, local-store boundaries, outbound mailbox reads, and PPU
    effective-address transfer through PSL1GHT or the PS3 SDK. Replace the
    current baked-in argument words and single-word result with a PPU-supplied
    argument and result protocol.
-4. Add target-specific Rust APIs for SIMD and the MFC DMA, mailbox, and
+7. Add target-specific Rust APIs for SIMD and the MFC DMA, mailbox, and
    synchronization operations. Keep unsafe hardware interfaces separate from
    portable `core` functionality.
-5. Run target tests in an SPU emulator and, when hardware is available, on an
-   SPU loaded by a PPU program.
+8. Run the full target test suite in an SPU emulator and, when hardware is
+   available, on an SPU loaded by a PPU program.
 
 The LLVM backend, Rust target and `core`, PPU loader, hardware APIs, and SPU
 execution milestones remain open. This scalar prototype is not a rustc target

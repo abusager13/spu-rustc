@@ -12,14 +12,15 @@ from the PS3 development toolchain. It does **not** add an official
 flag names the prototype's output architecture.
 
 Supported scalar functions have zero to 72 `i32` ABI parameters and straight-
-line `i32` add, subtract, bitwise, and shift operations. Rust `wrapping_shl`
-and `wrapping_shr` mask the shift count to five bits; signed right shifts use
-arithmetic shift semantics. Equality and signed or unsigned integer
+line `i32` add, subtract, wrapping multiply, bitwise, and shift operations.
+Rust `wrapping_shl` and `wrapping_shr` mask the shift count to five bits;
+signed right shifts use arithmetic semantics. Equality and signed or unsigned
 comparisons can return Rust `bool`, normalized to `0` or `1` in the SPU result
 register. Functions may also return a parameter, an operation result, or any
 32-bit literal. Immediate forms are used where supported and larger constants
 are materialized in a register. The examples include scalar operations,
-three- and eight-argument sums, shifts, and signed and unsigned comparisons.
+variable and constant multiplication, three- and eight-argument sums, shifts,
+and signed and unsigned comparisons.
 A separate minimal `_start` example can be linked to an SPU ELF executable; it
 immediately runs the native SPU `stop 0` instruction. See [`examples`](examples)
 and the design notes in [`docs`](docs).
@@ -50,6 +51,8 @@ spu-readelf -h add_u32.o
 spu-objdump -dr add_u32.o
 cargo run -- --target spu-sony-ps3 --emit=obj -o sum3_u32.o examples/sum3_u32.rs
 spu-objdump -dr sum3_u32.o
+cargo run -- --target spu-sony-ps3 --emit=obj -o mul_u32.o examples/mul_u32.rs
+spu-objdump -dr mul_u32.o
 cargo run -- --target spu-sony-ps3 --emit=elf -o stop.elf examples/stop_entry.rs
 spu-readelf -h stop.elf
 spu-objdump -d stop.elf

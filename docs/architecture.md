@@ -110,17 +110,20 @@ The current driver:
 1. Requires `#![no_std]` Rust source.
 2. Uses host `rustc` to parse and type-check it and emit host LLVM IR.
 3. Accepts one function with zero to 72 named `i32` parameters, a straight-line
-   sequence of `add`, `sub`, `and`, `or`, `xor`, `shl`, `lshr`, `ashr`, or
-   integer comparisons, and a return of a parameter, computed `i32`, Rust
-   `bool`, or 32-bit literal. Arithmetic, logic, and shift immediates are used
-   when the SPU encoding permits; other constants are materialized in a
-   temporary register. `icmp` supports equality plus all signed and unsigned
-   order predicates. Comparison masks are reduced to Rust bool's `0` or `1`.
+   sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
+   `ashr`, or integer comparisons. It returns a parameter, computed `i32`, Rust
+   `bool`, or 32-bit literal. Add/subtract, logic, and shift immediates are
+   used when the SPU encoding permits; multiply operands and other constants
+   are materialized in a temporary register. `icmp` supports equality plus
+   all signed and unsigned order predicates. Comparison masks are reduced to
+   Rust bool's `0` or `1`.
 4. Assigns parameters to C ABI registers `$3` through `$74`, uses caller-saved
    registers `$3` through `$79` for computed values, and reuses temporary
-   registers after each value's last use. It places the result in `$3` (using
-   `il` or `ilhu`/`iohl` for literal returns), aligns functions to 8 bytes,
-   inserts `lnop` pipe-1 fillers between consecutive pipe-0 operations, emits
+   registers after each value's last use. It expands 32-bit multiplication
+   into two cross-halfword `mpyh` products, one low-halfword `mpyu` product,
+   and two wrapping additions. It places the result in `$3` (using `il` or
+   `ilhu`/`iohl` for literal returns), aligns functions to 8 bytes, inserts
+   `lnop` pipe-1 fillers between consecutive pipe-0 operations, emits
    the SPU return branch, and invokes GNU `spu-as`.
 5. For a separate `void _start() -> !` Rust entry that contains the specific
    `core::arch::asm!("stop 0", options(noreturn, ...))` operation, emits `stop

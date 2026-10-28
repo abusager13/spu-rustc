@@ -91,6 +91,14 @@ run_case addition-wide "$tmp/add_entry.elf" 1234acf0
 
 compile_entry sub_u32 100,7
 run_case subtraction "$tmp/sub_u32.elf" 0000005d
+compile_entry mul_u32 0xffffffff,0xffffffff
+run_case multiplication-overflow "$tmp/mul_u32.elf" 00000001
+compile_entry mul_u32 0x12345678,0x9abcdef0
+run_case multiplication-cross-products "$tmp/mul_u32.elf" 242d2080
+compile_entry mul_i32 0xfffffffe,7
+run_case signed-multiplication-wrapping "$tmp/mul_i32.elf" fffffff2
+compile_entry mul_constant_u32 0x89abcdef
+run_case multiplication-constant "$tmp/mul_constant_u32.elf" e242d208
 compile_entry and_u32 0xf0f0,0x0ff0
 run_case bitwise-and "$tmp/and_u32.elf" 000000f0
 compile_entry or_u32 0xf000,0x00f0

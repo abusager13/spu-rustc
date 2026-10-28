@@ -29,8 +29,9 @@ into an `ET_EXEC` SPU image. Scalar startup can initialize up to 72 explicit
 as a frontend, a small LLVM IR lowering pass, and the PS3 GNU SPU
 assembler/linker. Tests cover add/subtract/bitwise operations, wrapping shifts,
 all signed and unsigned integer comparison predicates returning `bool`,
-constants, identity functions, multi-operation code, ABI argument placement,
-liveness-based temporary reuse, and stop-only and scalar-entry ELFs. The scalar
+wrapping `i32` multiplication via SPU halfword products, constants, identity
+functions, multi-operation code, ABI argument placement, liveness-based
+temporary reuse, and stop-only and scalar-entry ELFs. The scalar
 startup initializes the local-store stack pointer, supplies optional
 image-time argument words, calls the Rust function, posts its result to the
 outbound mailbox, and stops. This is a tested

@@ -103,6 +103,17 @@ in this repository.
    distinct signed/unsigned comparisons across the sign bit. The repeatable
    `scripts/test-spu-emulator.sh` checks every mailbox value and confirms each
    image reaches `stop`.
+20. Compiled variable `u32` and `i32` plus constant `u32` wrapping
+   multiplication as native SPU ELF. The generated sequence uses `mpyh` for
+   both cross-halfword products, `mpyu` for the low-halfword product, and two
+   word additions; it matches the instruction sequence produced by
+   `spu-gcc -O1` for a C reference multiply. `SPU_REQUIRE_E2E=1 cargo test
+   --offline` passed all 35 unit tests and all three end-to-end tests,
+   including ELF and disassembly checks for both multiplication forms. The
+   emulator returned `0x00000001` for `0xffffffff * 0xffffffff`,
+   `0x242d2080` for `0x12345678 * 0x9abcdef0`, `0xfffffff2` for signed
+   `-2 * 7`, and `0xe242d208` for `0x89abcdef * 0x12345678`; each image
+   reached `stop` and wrote the expected outbound mailbox word.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

@@ -54,6 +54,9 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
     let cases = [
         ("add_u32", "a\t$3,$3,$4"),
         ("sub_u32", "sf\t$3,$4,$3"),
+        ("mul_u32", "mpyu\t$3"),
+        ("mul_i32", "mpyu\t$3"),
+        ("mul_constant_u32", "mpyu\t$4,$3,$4"),
         ("and_u32", "and\t$3,$3,$4"),
         ("or_u32", "or\t$3,$3,$4"),
         ("xor_u32", "xor\t$3,$3,$4"),
@@ -136,6 +139,47 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
                 &disassembly,
                 &["a\t$6,$3,$4", "lnop", "a\t$3,$5,$6", "bi\t$0"],
                 "sum3_u32",
+            );
+        }
+        if name == "mul_u32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "mpyh\t$5,$4,$3",
+                    "lnop",
+                    "mpyh\t$6,$3,$4",
+                    "lnop",
+                    "mpyu\t$3,$4,$3",
+                    "lnop",
+                    "a\t$5,$5,$6",
+                    "lnop",
+                    "a\t$3,$3,$5",
+                    "bi\t$0",
+                ],
+                "mul_u32",
+            );
+        }
+        if name == "mul_constant_u32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "ilhu\t$4,4660",
+                    "lnop",
+                    "iohl\t$4,22136",
+                    "lnop",
+                    "mpyh\t$5,$3,$4",
+                    "lnop",
+                    "mpyh\t$6,$4,$3",
+                    "lnop",
+                    "mpyu\t$4,$3,$4",
+                    "lnop",
+                    "a\t$5,$5,$6",
+                    "lnop",
+                    "a\t$4,$4,$5",
+                    "lnop",
+                    "or\t$3,$4,$4",
+                ],
+                "mul_constant_u32",
             );
         }
         if name == "sum8_u32" {
