@@ -269,8 +269,22 @@ in this repository.
    and all three end-to-end tests. The pinned emulator script passed 97
    mailbox checks, including a 73rd argument of 42 and the full-width value
    `0x12345678`; count-ones remained skipped because the emulator does not
-   implement `sumb`. This covers only the first overflow `i32` argument and
-   does not implement general stack frames or additional stack arguments.
+   implement `sumb`. At this validation point, the prototype covered only the
+   first overflow `i32` argument; the later three-argument extension is below.
+
+38. Extended the scalar ABI experiment to three overflow arguments. The
+   installed GCC 9.5 SPU backend generates a callee load at `32($sp)` for the
+   73-argument case, `48($sp)` for the 74-argument case, and `64($sp)` for the
+   75-argument case. Its generated caller for 75 arguments reserves 80 bytes
+   and writes the three overflow values at offsets 32, 48, and 64. The Rust
+   prototype now supports up to three stack-passed `i32` arguments, loading them
+   into `$75` through `$77`; startup reserves 32 bytes plus 16 bytes per stack
+   argument. A Rust example sums three stack arguments, and the emulator
+   returns 7 for inputs 1, 2, and 4. This differs from the 8-byte scalar slots
+   recorded for the historical LLVM backend, so full ABI compatibility remains
+   unclaimed. `SPU_REQUIRE_E2E=1 cargo test --offline` passed 66 unit tests and
+   all three end-to-end tests. The emulator passed 98 mailbox checks; its
+   count-ones cases remain skipped because this emulator build lacks `sumb`.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

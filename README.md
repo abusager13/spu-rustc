@@ -11,8 +11,8 @@ from the PS3 development toolchain. It does **not** add an official
 `rustc --target=spu-sony-ps3` target or a general Rust backend. Its `--target`
 flag names the prototype's output architecture.
 
-Supported scalar functions have zero to 73 `i32` ABI parameters: 72 in the SPU
-argument registers and one stack-passed argument. They support straight-line
+Supported scalar functions have zero to 75 `i32` ABI parameters: 72 in the SPU
+argument registers and up to three stack-passed arguments. They support straight-line
 `i32` add, subtract, wrapping multiply, bitwise, shift, rotate,
 `leading_zeros`, `trailing_zeros`, `leading_ones`, `trailing_ones`, and
 `count_ones` operations, scalar conditional `select`, unsigned
@@ -100,8 +100,8 @@ The object is a relocatable ELF32 file with big-endian data and `Machine: SPU`.
 The stop example links as a minimal ELF32 `EXEC` image. A scalar Rust function
 can also link through the experimental startup, which sets the local-store
 stack pointer, places up to 72 explicit 32-bit words in SPU ABI argument
-registers, and stores one additional word in the first stack argument slot when
-the function has 73 parameters. It calls the function, writes its `u32` or
+registers, and stores up to three additional words in 16-byte stack slots when
+the function has more than 72 parameters. It calls the function, writes its `u32` or
 normalized `bool` result to the outbound mailbox, and stops. For example:
 
 ```sh
@@ -131,8 +131,8 @@ maximum `i32` values. Min/max checks cover signed and unsigned order across the
 sign bit and equal operands. Saturating arithmetic checks cover overflow,
 underflow, boundary results, and ordinary operations. Startup loads fixed ABI
 argument words, including a full-width constant, and checks the 73rd
-stack-passed argument; each result must be written to the outbound mailbox
-before the emulator reaches `stop`.
+stack-passed argument plus a three-argument stack-slot case; each result must be
+written to the outbound mailbox before the emulator reaches `stop`.
 
 ```sh
 git clone https://github.com/eth-man/ps3-cell-re-tools.git /tmp/ps3-cell-re-tools
@@ -169,9 +169,9 @@ environment variables.
 
 This is still a machine-code proof of concept, not a complete PS3 SPU
 application toolchain. Its startup supports one scalar function per image,
-with up to 73 image-time argument words (72 registers and one stack slot), and
-returns one word through the outbound mailbox; more stack arguments are still
-unsupported. There is no Rust
+with up to 75 image-time argument words (72 registers and three stack slots), and
+returns one word through the outbound mailbox; more than three stack arguments
+are unsupported. There is no Rust
 PPU loader or general runtime. It has no `core` build, SIMD API, local-store
 memory API, DMA, general mailbox API, or synchronization library. Hardware
 execution has not been tested. Details and the remaining work are in

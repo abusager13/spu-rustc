@@ -40,7 +40,13 @@ That backend records several useful design constraints:
 - Scalar and vector arguments and results are assigned to SPU registers `$3`
   through `$74`; the first two `i32` C ABI arguments use `$3` and `$4`.
   When registers are exhausted, the historical convention uses 8-byte slots
-  for `i32`, `i64`, `f32`, and `f64`, and 16-byte slots for vectors.
+  for `i32`, `i64`, `f32`, and `f64`, and 16-byte slots for vectors. The
+  installed GCC 9.5 SPU reference differs for scalar overflow arguments: its
+  caller and callee code use 16-byte slots. See the
+  [GCC SPU argument-lowering code](https://github.com/gcc-mirror/gcc/blob/releases/gcc-9.5.0/gcc/config/spu/spu.c#L3624-L3669).
+  The prototype follows the installed toolchain for now; this difference needs
+  reconciliation against the historical backend before claiming full
+  calling-convention compatibility.
 - `$0` is the link register (`$lr`), `$1` the stack pointer (`$sp`), and `$2`
   the environment pointer. The historical backend marks `$80` through `$127`
   callee-saved. The stack grows down and is 16-byte aligned.
@@ -145,8 +151,8 @@ The current driver:
 
 1. Requires `#![no_std]` Rust source.
 2. Uses host `rustc` to parse and type-check it and emit host LLVM IR.
-3. Accepts one function with zero to 73 named `i32` parameters: 72 register
-   arguments plus exactly one stack-passed argument. More stack arguments are
+3. Accepts one function with zero to 75 named `i32` parameters: 72 register
+   arguments plus up to three stack-passed arguments. More stack arguments are
    rejected. It supports a straight-line
    sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
    `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
@@ -193,7 +199,8 @@ The current driver:
    comparison masks used by a select remain all-ones or all-zero. This only
    accepts straight-line `select` instructions and does not lower `br` or `phi`.
 4. Assigns the first 72 parameters to C ABI registers `$3` through `$74` and
-   loads a 73rd parameter from `32($sp)` into `$75`. It uses caller-saved
+   loads up to three overflow parameters from 16-byte slots starting at
+   `32($sp)` into `$75` through `$77`. It uses caller-saved
    registers `$3` through `$79` for computed values and reuses temporary
    registers after each value's last use. It expands 32-bit multiplication
    into two cross-halfword `mpyh` products, one low-halfword `mpyu` product,
@@ -205,15 +212,18 @@ The current driver:
    `core::arch::asm!("stop 0", options(noreturn, ...))` operation, emits `stop
    0`. It can also link a scalar Rust function with startup code that
    initializes `$sp` and `$2`, optionally materializes up to 72 explicit
-   32-bit argument words into `$3` through `$74`, and can place one additional
-   word at `32($sp)` after reserving the caller's 48-byte frame. It calls the
+   32-bit argument words into `$3` through `$74`, and can place up to three
+   additional words in 16-byte slots starting at `32($sp)`. It reserves the
+   32-byte linkage area plus one 16-byte slot per overflow argument. It calls the
    function, posts its result to outbound mailbox channel 28, and stops.
    `--entry-args` supplies these image-time words. Both paths can invoke
    `spu-ld` to make an ELF executable.
 
 The host LLVM data layout is ignored. These hand-coded ABI assumptions cover
-only the accepted scalar `i32` operations, `i1` comparison results, and the
-single modeled first stack argument. Rust
+only the accepted scalar `i32` operations, `i1` comparison results, and up to
+three scalar stack arguments. The 16-byte overflow-slot spacing follows the
+installed GCC 9.5 SPU code generator, checked with caller and callee examples.
+Rust
 wrapping shifts apply the LLVM-emitted `and 31` before shifting. SPU word
 rotations use the low five bits of the count; variable right rotation negates
 the count before `rot`, and immediate rotations use `roti`. Emulator checks

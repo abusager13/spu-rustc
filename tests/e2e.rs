@@ -67,6 +67,7 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("sum3_u32", "a\t$6,$3,$4"),
         ("identity_u32", "bi\t$0"),
         ("stack_arg_u32", "lqd\t$75,32($1)"),
+        ("stack_args_u32", "lqd\t$77,64($1)"),
         ("constant_u32", "il\t$3,42"),
         ("wide_constant_u32", "ilhu\t$3,4660"),
         ("add_large_constant", "il\t$4,4096"),
@@ -755,6 +756,61 @@ fn links_a_scalar_entry_with_local_store_startup_and_mailbox_return() {
             "bi\t$0",
         ],
         "one stack-passed scalar argument",
+    );
+
+    let multi_stack_source =
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/stack_args_u32.rs");
+    let multi_stack_executable = temp.join("stack-args.elf");
+    let mut multi_stack_words = vec!["0"; 72];
+    multi_stack_words.extend(["1", "2", "4"]);
+    let multi_stack_entry_args = multi_stack_words.join(",");
+    let result = Command::new(env!("CARGO_BIN_EXE_spu-rustc"))
+        .arg("--target=spu-sony-ps3")
+        .arg("--emit=elf")
+        .arg(format!("--entry-args={multi_stack_entry_args}"))
+        .arg("-o")
+        .arg(&multi_stack_executable)
+        .arg("--rustc")
+        .arg(&rustc)
+        .arg("--assembler")
+        .arg(&assembler)
+        .arg("--linker")
+        .arg(&linker)
+        .arg(&multi_stack_source)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "multi-stack-argument SPU executable link failed:\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let disassembly = Command::new(&objdump)
+        .arg("-d")
+        .arg(&multi_stack_executable)
+        .output()
+        .unwrap();
+    assert!(
+        disassembly.status.success(),
+        "spu-objdump failed for multi-stack-argument scalar entry"
+    );
+    let disassembly = String::from_utf8_lossy(&disassembly.stdout);
+    assert_in_order(
+        &disassembly,
+        &[
+            "ai\t$1,$1,-80",
+            "il\t$75,1",
+            "stqd\t$75,32($1)",
+            "il\t$76,2",
+            "stqd\t$76,48($1)",
+            "il\t$77,4",
+            "stqd\t$77,64($1)",
+            "brsl\t$0,",
+            "lqd\t$75,32($1)",
+            "lqd\t$76,48($1)",
+            "lqd\t$77,64($1)",
+        ],
+        "three stack-passed scalar arguments",
     );
 
     let mismatch = Command::new(env!("CARGO_BIN_EXE_spu-rustc"))

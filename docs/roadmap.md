@@ -73,14 +73,15 @@ both selected arms and both arms computing an arithmetic result.
 Implemented as an experimental image builder: a Rust function returning `i32`
 or `bool` can be linked with startup code into an SPU `ET_EXEC` image. Startup
 sets `$1` to the 256 KiB local-store limit, clears `$2`, initializes up to 72
-explicit 32-bit argument words in `$3` through `$74`, and supports one
-additional stack-passed word in the slot at `32($sp)`. For that case startup
-reserves a 48-byte caller frame. It then calls the function, posts the result
-on outbound mailbox channel 28, and executes `stop 0`. End-to-end tests inspect
-the ELF and disassembly; the emulator executes the zero-argument startup, a
-register-argument addition, and the 73rd stack-passed argument. More than one
-stack argument remains unsupported. The argument words are baked into
-startup, so this is not yet a PPU loader or a general runtime contract.
+explicit 32-bit argument words in `$3` through `$74`, and supports up to three
+additional stack-passed words in 16-byte slots starting at `32($sp)`. Startup
+reserves the 32-byte linkage area plus one 16-byte slot per overflow argument.
+It then calls the function, posts the result on outbound mailbox channel 28,
+and executes `stop 0`. End-to-end tests inspect the ELF and disassembly; the
+emulator executes the zero-argument startup, a register-argument addition, one
+stack-passed argument, and three stack-passed arguments. More than three stack
+arguments remain unsupported. The argument words are baked into startup, so
+this is not yet a PPU loader or a general runtime contract.
 
 ## Milestone 3: wrapping 32-bit multiplication
 

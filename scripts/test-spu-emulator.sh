@@ -97,6 +97,8 @@ compile_entry stack_arg_u32 "${stack_args}42"
 run_case stack-passed-argument "$tmp/stack_arg_u32.elf" 0000002a
 compile_entry stack_arg_u32 "${stack_args}0x12345678"
 run_case stack-passed-full-width-argument "$tmp/stack_arg_u32.elf" 12345678
+compile_entry stack_args_u32 "${stack_args}1,2,4"
+run_case three-stack-passed-arguments "$tmp/stack_args_u32.elf" 00000007
 
 compile_entry sub_u32 100,7
 run_case subtraction "$tmp/sub_u32.elf" 0000005d
