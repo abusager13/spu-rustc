@@ -97,12 +97,16 @@ multiplication support.
    with Rust's LLVM backend. A follow-up check found that the GCC snapshot
    pinned by the current `rustc_codegen_gcc` checkout has removed SPU support:
    `spu*-*-*` is in its unsupported-target list, and the SPU machine description
-   is absent. The separate GCC 9.5 cross-`libgccjit` object smoke proves that
-   the older backend can create SPU objects, but its library is missing 44
-   symbols from the plugin's non-`master` API (and more with its default
-   `master` feature). Advancing that adapter would require restoring or porting
-   the GCC SPU backend and matching the plugin API, then testing Rust ABI
-   behavior. Preserve historical LLVM tests as backend support grows.
+   is absent. An isolated legacy `rustc_codegen_gcc` experiment did compile and
+   emulate one `#![no_core]` identity function through GCC 9.5 `libgccjit`, but
+   it required temporary API remapping, 33 no-op compatibility symbols, and a
+   PowerPC placeholder target JSON. That is evidence for a research route, not
+   a supported Rust SPU target; a constant-return probe failed, and the
+   experiment provides no `core` support. The current plugin/API mismatch and
+   unsupported GCC snapshot remain. Advancing this route requires a maintained
+   Rust/GCC pairing, clean API compatibility, a real SPU target specification,
+   and full Rust ABI validation. Preserve historical LLVM tests as backend
+   support grows.
 5. Define and implement a Rust SPU target specification, full calling
    convention and data layout, relocations, stack frames, memory operations,
    and linker support; build `core` with `#![no_std]` and `panic=abort`.

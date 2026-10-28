@@ -92,6 +92,19 @@ registered SPU target. The pinned stable rustc 1.99.1 additionally requires
 nightly `-Z unstable-options` to parse custom target JSON. A target JSON or a
 cross-libgccjit object smoke alone therefore does not supply a Rust SPU target.
 
+A separate legacy experiment did get one Rust function through a Rust
+codegen backend: nightly rustc 1.59 with `rustc_codegen_gcc` from 2021,
+GCC 9.5 SPU `libgccjit`, temporary API compatibility edits, and no-op symbols
+for 33 newer APIs unused by the tested function. It emitted a native SPU object
+for a `#![no_core]` one-argument identity function, which linked and ran in the
+emulator with the expected mailbox result. The JSON used `arch: "powerpc"`
+and a PowerPC LLVM triple as placeholders; the frontend therefore did not
+see an SPU target. A constant-return probe also failed in the old adapter.
+This is a narrow research result, not a project build path: the adapter patches
+and compatibility shim are temporary, other APIs and function forms remain
+untested, and this provides neither a true SPU target specification nor
+`core` support. The experiment is recorded in `docs/validation.md`.
+
 The GCC 9.5 SPU [machine description](https://github.com/gcc-mirror/gcc/blob/releases/gcc-9.5.0/gcc/config/spu/spu.md)
 models the integer arithmetic pipe separately from `lnop`'s second pipe. Its
 generated three-argument sum uses `lnop` between consecutive arithmetic
@@ -111,12 +124,13 @@ LLVM integration, tests against current SPU binutils, and completion of its
 documented gaps.
 
 The current prototype deliberately does not try to masquerade as that backend.
-The GNU SPU toolchain remains the tested assembler/linker and ABI oracle. A
-Rust GCC adapter remains a possible route only if the old SPU backend can be
-ported into a current GCC fork, or a different maintained compiler backend is
-found; it also needs a libgccjit API compatible with the Rust plugin, followed
-by Rust SPU ABI and data-layout validation. The scalar prototype remains the
-only Rust-to-SPU path validated end to end in this repository.
+The GNU SPU toolchain remains the tested assembler/linker and ABI oracle. The
+legacy GCC adapter now has a one-function experimental end-to-end result, but
+it still needs a maintained Rust/GCC pairing, a real SPU target specification,
+compatible APIs without no-op shims, and complete Rust ABI and data-layout
+validation before it could become a project backend. The scalar prototype
+remains the only Rust-to-SPU path integrated and maintained in this
+repository.
 
 The target-specific Rust API will also need to distinguish local-store
 addresses from PPU effective addresses for DMA. The available SPU GCC install

@@ -174,6 +174,13 @@ memory API, DMA, general mailbox API, or synchronization library. Hardware
 execution has not been tested. Details and the remaining work are in
 [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/roadmap.md).
 
+A separate experiment compiled and emulated one `#![no_core]` identity
+function through a legacy `rustc_codegen_gcc` adapter using temporary API
+compatibility shims and a PowerPC placeholder target JSON. It is not integrated
+into this project and does not add a Rust SPU target; see the
+[`validation record`](docs/validation.md#validation-record) for the exact scope
+and limitations.
+
 ## License
 
 This project is licensed under GNU GPL version 3 only; see [LICENSE](LICENSE).

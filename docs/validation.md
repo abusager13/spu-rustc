@@ -240,6 +240,24 @@ in this repository.
    checks overall, including byte swaps for zero, one, `0x12345678`, and all
    ones; each image reached `stop`. Count-ones execution remained skipped
    because the emulator leaves `sumb` unimplemented.
+36. Separately tested a legacy direct Rust codegen path outside this
+   repository. I built `rustc_codegen_gcc` at commit
+   `54d2ec1a82d2a5fd0732264d5c91fc8e01f12832` with nightly rustc
+   `1.59.0-nightly (78fd0f633 2021-12-29)` and GCC 9.5 `libgccjit` configured
+   for `spu`. The temporary build needed GCC 9.5 API enum remapping, 33
+   no-op compatibility symbols for unused newer APIs, an external-driver
+   setting, and an x86-only guard around the adapter's `-masm=intel` option.
+   Its custom target JSON used `arch: "powerpc"` and a PowerPC LLVM triple as
+   placeholders because this rustc cannot accept SPU as a C-ABI architecture
+   and has no LLVM SPU backend. With that setup, rustc compiled a one-argument
+   `#![no_core]` Rust identity function to an ELF32 big-endian `EM_SPU`
+   object. I linked a small startup that passed 42, called the Rust function,
+   and wrote the return value to the outbound mailbox. The pinned emulator
+   reached `stop` and wrote `00 00 00 2a`. A constant-return probe failed in
+   the adapter with a null GCC JIT rvalue. This validates only that isolated
+   identity path; the adapter patches, compatibility shim, and target JSON
+   are not part of this project and do not establish a supported Rust SPU
+   target or `core` support.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
