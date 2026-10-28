@@ -83,8 +83,12 @@ It then calls the function, posts the result on outbound mailbox channel 28,
 and executes `stop 0`. End-to-end tests inspect the ELF and disassembly; the
 emulator executes the zero-argument startup, a register-argument addition, one
 stack-passed argument, and three stack-passed arguments. More than three stack
-arguments remain unsupported. The argument words are baked into startup, so
-this is not yet a PPU loader or a general runtime contract.
+arguments remain unsupported. `--runtime-args` now also preserves up to four
+incoming 32-bit values in `$3` through `$6` and forwards them to the Rust
+function; the emulator test seeds those registers directly. This only validates
+the prototype's 32-bit SPU ABI path. It does not validate the PS3 thread
+launcher, whose `sysSpuThreadArgument` carries four 64-bit values, or establish
+a general runtime contract.
 
 ## Milestone 3: wrapping 32-bit multiplication
 
@@ -97,9 +101,21 @@ constant multiplier. Signed and unsigned wrapping multiplication share the
 same low-word result. This does not add general multiply-accumulate or vector
 multiplication support.
 
+## Milestone 4: minimal PPU launcher build
+
+Added a `#![no_std]` Rust PPU entry point and a small PSL1GHT C bridge. The
+launcher opens an SPU ELF, creates and starts a one-thread group, joins it, reads
+the SPU thread exit status, and returns that status from the PPU application.
+It uses `/app_home/scalar.elf` by default and accepts an optional image path.
+The corresponding SPU image must use the experimental `--thread-exit` startup.
+The launcher cross-compiles and links as an ELFv1 PowerPC64 PPU executable with
+the available nightly Rust PPU target and PSL1GHT. It has not been run in an
+emulator or on PS3 hardware, so loading and exit-status behavior remain
+unverified at runtime. It passes no arguments to the SPU image.
+
 ## Future milestones
 
-4. Port and modernize LLVM's historical CellSPU backend, then integrate it
+5. Port and modernize LLVM's historical CellSPU backend, then integrate it
    with Rust's LLVM backend. A follow-up check found that the GCC snapshot
    pinned by the current `rustc_codegen_gcc` checkout has removed SPU support:
    `spu*-*-*` is in its unsupported-target list, and the SPU machine description
@@ -113,21 +129,21 @@ multiplication support.
    Rust/GCC pairing, clean API compatibility, a real SPU target specification,
    and full Rust ABI validation. Preserve historical LLVM tests as backend
    support grows.
-5. Define and implement a Rust SPU target specification, full calling
+6. Define and implement a Rust SPU target specification, full calling
    convention and data layout, relocations, stack frames, memory operations,
    and linker support; build `core` with `#![no_std]` and `panic=abort`.
-6. Implement a Rust PPU loader for SPU ELF images. Validate image loading,
-   arguments, local-store boundaries, outbound mailbox reads, and PPU
-   effective-address transfer through PSL1GHT or the PS3 SDK. Replace the
-   current baked-in argument words and single-word result with a PPU-supplied
-   argument and result protocol.
-7. Add target-specific Rust APIs for SIMD and the MFC DMA, mailbox, and
+7. Run the PPU launcher in RPCS3 and, when available, on PS3 hardware. Then
+   adapt its four 64-bit `sysSpuThreadArgument` values to a defined Rust SPU
+   entry ABI, check local-store boundaries, and transfer PPU effective
+   addresses through DMA. Replace baked-in argument words and the single-word
+   result with a tested PPU-supplied argument and result protocol.
+8. Add target-specific Rust APIs for SIMD and the MFC DMA, mailbox, and
    synchronization operations. Keep unsafe hardware interfaces separate from
    portable `core` functionality.
-8. Run the full target test suite in an SPU emulator and, when hardware is
+9. Run the full target test suite in an SPU emulator and, when hardware is
    available, on an SPU loaded by a PPU program.
 
-The LLVM backend, Rust target and `core`, PPU loader, hardware APIs, and SPU
-execution milestones remain open. This scalar prototype is not a rustc target
-and does not provide the full runtime or execution support needed by the
-long-term goal.
+The LLVM backend, Rust SPU target and `core`, PPU loader runtime validation,
+hardware APIs, and hardware execution milestones remain open. This scalar
+prototype is not a rustc SPU target and does not provide the full runtime or
+execution support needed by the long-term goal.

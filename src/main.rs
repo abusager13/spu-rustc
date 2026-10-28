@@ -20,6 +20,8 @@ struct Config {
     output: PathBuf,
     emit: Emit,
     entry_args: Option<Vec<u32>>,
+    runtime_args: bool,
+    thread_exit: bool,
     target: String,
     rustc: OsString,
     assembler: OsString,
@@ -60,6 +62,15 @@ fn run() -> Result<(), String> {
     let config = parse_args(env::args_os().skip(1))?;
     if config.entry_args.is_some() && config.emit != Emit::Executable {
         return Err("--entry-args is only valid with --emit=elf".into());
+    }
+    if config.runtime_args && config.emit != Emit::Executable {
+        return Err("--runtime-args is only valid with --emit=elf".into());
+    }
+    if config.runtime_args && config.entry_args.is_some() {
+        return Err("--runtime-args cannot be combined with --entry-args".into());
+    }
+    if config.thread_exit && config.emit != Emit::Executable {
+        return Err("--thread-exit is only valid with --emit=elf".into());
     }
     let source = fs::read_to_string(&config.input)
         .map_err(|e| format!("cannot read {}: {e}", config.input.display()))?;
@@ -132,20 +143,47 @@ fn run() -> Result<(), String> {
             if config.entry_args.is_some() && runtime_entry.is_none() {
                 return Err("--entry-args cannot be used with a stop-only _start function".into());
             }
+            if config.runtime_args && runtime_entry.is_none() {
+                return Err(
+                    "--runtime-args cannot be used with a stop-only _start function".into(),
+                );
+            }
+            if config.thread_exit && runtime_entry.is_none() {
+                return Err(
+                    "--thread-exit requires a scalar Rust function, not a stop-only _start".into(),
+                );
+            }
             let startup = if let Some((function_symbol, parameter_count)) = runtime_entry {
-                if config.entry_args.is_none() && parameter_count != 0 {
-                    return Err(format!(
+                if config.runtime_args {
+                    if parameter_count > 4 {
+                        return Err(format!(
+                            "--runtime-args supports at most four i32 arguments in registers $3 through $6; found {parameter_count}"
+                        ));
+                    }
+                    Some(if config.thread_exit {
+                        llvm_ir::lower_runtime_startup_passthrough_with_exit(function_symbol, true)
+                    } else {
+                        llvm_ir::lower_runtime_startup_passthrough(function_symbol)
+                    })
+                } else {
+                    if config.entry_args.is_none() && parameter_count != 0 {
+                        return Err(format!(
                         "Rust function {function_symbol} takes {parameter_count} i32 arguments; provide them with --entry-args"
                     ));
+                    }
+                    let arguments = config.entry_args.as_deref().unwrap_or(&[]);
+                    if arguments.len() != parameter_count {
+                        return Err(format!(
+                            "Rust function {function_symbol} takes {parameter_count} i32 arguments, but --entry-args supplied {}",
+                            arguments.len()
+                        ));
+                    }
+                    Some(if config.thread_exit {
+                        llvm_ir::lower_runtime_startup_with_exit(function_symbol, arguments, true)
+                    } else {
+                        llvm_ir::lower_runtime_startup(function_symbol, arguments)
+                    })
                 }
-                let arguments = config.entry_args.as_deref().unwrap_or(&[]);
-                if arguments.len() != parameter_count {
-                    return Err(format!(
-                        "Rust function {function_symbol} takes {parameter_count} i32 arguments, but --entry-args supplied {}",
-                        arguments.len()
-                    ));
-                }
-                Some(llvm_ir::lower_runtime_startup(function_symbol, arguments))
             } else {
                 None
             };
@@ -215,6 +253,8 @@ fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Config, String> {
     let mut output = None;
     let mut emit = Emit::Object;
     let mut entry_args = None;
+    let mut runtime_args = false;
+    let mut thread_exit = false;
     let mut target = None;
     let mut rustc = env::var_os("RUSTC").unwrap_or_else(|| OsString::from("rustc"));
     let mut assembler = env::var_os("SPU_AS").unwrap_or_else(|| OsString::from("spu-as"));
@@ -243,6 +283,10 @@ fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Config, String> {
             entry_args = Some(parse_entry_args(&next_value(&mut args, "--entry-args")?)?);
         } else if let Some(value) = arg_text.strip_prefix("--entry-args=") {
             entry_args = Some(parse_entry_args(&OsString::from(value))?);
+        } else if arg == "--runtime-args" {
+            runtime_args = true;
+        } else if arg == "--thread-exit" {
+            thread_exit = true;
         } else if arg == "-o" {
             output = Some(PathBuf::from(next_value(&mut args, "-o")?));
         } else if arg == "--rustc" {
@@ -282,6 +326,8 @@ fn parse_args(args: impl Iterator<Item = OsString>) -> Result<Config, String> {
         output,
         emit,
         entry_args,
+        runtime_args,
+        thread_exit,
         target: target.to_string_lossy().into_owned(),
         rustc,
         assembler,
@@ -356,12 +402,15 @@ fn parse_entry_args(value: &OsString) -> Result<Vec<u32>, String> {
 
 fn print_help() {
     println!(
-        "Usage: spu-rustc --target spu-sony-ps3 [--emit obj|asm|elf] [--entry-args WORD,...] [-o OUTPUT] [--rustc PATH] [--assembler PATH] [--linker PATH] INPUT.rs\n\n\
+        "Usage: spu-rustc --target spu-sony-ps3 [--emit obj|asm|elf] [--entry-args WORD,... | --runtime-args] [--thread-exit] [-o OUTPUT] [--rustc PATH] [--assembler PATH] [--linker PATH] INPUT.rs\n\n\
          Compiles a restricted #![no_std] Rust function through a limited LLVM IR subset.\n\
          rustc is used as the host-side frontend; spu-as emits an EM_SPU object.\n\
          --emit=elf links a stop-only _start or a scalar function through minimal startup.\n\
          --entry-args supplies comma-separated decimal or hexadecimal 32-bit words\n\
          for up to 72 SPU ABI argument registers and three stack-passed words.\n\
+         --runtime-args forwards incoming 32-bit words in $3 through $6 to a function\n\
+         with up to four i32 parameters; it does not validate the PS3 u64 argument ABI.\n\
+         --thread-exit uses the PSL1GHT stop 0x102 exit convention after the result.\n\
          This is an experimental proof of concept, not a rustc target specification."
     );
 }

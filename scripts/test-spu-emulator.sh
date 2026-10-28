@@ -46,14 +46,21 @@ cd "$root"
 cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
     -o "$tmp/scalar_entry.elf" examples/scalar_entry.rs
 
+cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf --thread-exit \
+    -o "$tmp/scalar_thread_exit.elf" examples/scalar_entry.rs
+
 cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
     --entry-args=0x12345678,0x5678 -o "$tmp/add_entry.elf" examples/add_u32.rs
 
+cargo run --quiet --offline -- --target spu-sony-ps3 --emit=elf \
+    --runtime-args -o "$tmp/runtime_args.elf" examples/add_u32.rs
+
 run_case() {
     local name=$1 image=$2 expected=$3
+    shift 3
     local capture="$tmp/$name.mailbox" log="$tmp/$name.log"
     if ! (cd "$tmp" && ANERG_MBOX="$capture" timeout "${SPU_EMULATOR_TIMEOUT:-10s}" \
-        "$emulator" "$image") >"$log" 2>&1; then
+        "$emulator" "$@" "$image") >"$log" 2>&1; then
         cat "$log" >&2
         echo "$name: emulator failed or timed out" >&2
         return 1
@@ -87,7 +94,14 @@ compile_entry() {
 }
 
 run_case scalar-entry "$tmp/scalar_entry.elf" 0000002a
+run_case scalar-thread-exit "$tmp/scalar_thread_exit.elf" 0000002a
 run_case addition-wide "$tmp/add_entry.elf" 1234acf0
+if [[ "${SPU_EMULATOR_HAS_REG_PRESETS:-0}" == "1" ]]; then
+    run_case runtime-argument-registers "$tmp/runtime_args.elf" 1234acf0 \
+        -r 3=12345678 -r 4=00005678
+else
+    echo "skipping runtime-argument emulator case: set SPU_EMULATOR_HAS_REG_PRESETS=1 when the emulator supports -r register presets"
+fi
 
 stack_args=""
 for ((index = 0; index < 72; index++)); do

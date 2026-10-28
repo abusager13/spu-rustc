@@ -844,3 +844,195 @@ fn links_a_scalar_entry_with_local_store_startup_and_mailbox_return() {
 
     fs::remove_dir_all(temp).unwrap();
 }
+
+#[test]
+fn links_runtime_argument_entry_without_overwriting_abi_registers() {
+    let assembler = env::var_os("SPU_AS").unwrap_or_else(|| "spu-as".into());
+    let linker = env::var_os("SPU_LD").unwrap_or_else(|| "spu-ld".into());
+    let objdump = env::var_os("SPU_OBJDUMP").unwrap_or_else(|| "spu-objdump".into());
+    let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    for (name, program) in [
+        ("SPU_AS", &assembler),
+        ("SPU_LD", &linker),
+        ("SPU_OBJDUMP", &objdump),
+        ("RUSTC", &rustc),
+    ] {
+        if Command::new(program).arg("--version").output().is_err() {
+            if env::var_os("SPU_REQUIRE_E2E").is_some() {
+                panic!("SPU end-to-end test required, but {name} is unavailable");
+            }
+            eprintln!("skipping runtime-argument SPU executable test: {name} is unavailable");
+            return;
+        }
+    }
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let temp = env::temp_dir().join(format!(
+        "spu-rustc-runtime-args-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir(&temp).unwrap();
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/add_u32.rs");
+    let executable = temp.join("runtime-add.elf");
+    let result = Command::new(env!("CARGO_BIN_EXE_spu-rustc"))
+        .arg("--target=spu-sony-ps3")
+        .arg("--emit=elf")
+        .arg("--runtime-args")
+        .arg("-o")
+        .arg(&executable)
+        .arg("--rustc")
+        .arg(&rustc)
+        .arg("--assembler")
+        .arg(&assembler)
+        .arg("--linker")
+        .arg(&linker)
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "runtime-argument SPU executable link failed:\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let bytes = fs::read(&executable).unwrap();
+    assert_eq!(&bytes[0..6], b"\x7fELF\x01\x02", "ELF class/endian");
+    assert_eq!(&bytes[16..18], b"\x00\x02", "ELF type must be ET_EXEC");
+    assert_eq!(&bytes[18..20], b"\x00\x17", "ELF machine must be EM_SPU");
+    let disassembly = Command::new(&objdump)
+        .arg("-d")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        disassembly.status.success(),
+        "spu-objdump failed for runtime-argument entry"
+    );
+    let disassembly = String::from_utf8_lossy(&disassembly.stdout);
+    assert_in_order(
+        &disassembly,
+        &[
+            "ilhu\t$1,4",
+            "il\t$2,0",
+            "brsl\t$0,",
+            "wrch\t$ch28,$3",
+            "stop",
+            "a\t$3,$3,$4",
+            "bi\t$0",
+        ],
+        "runtime-argument startup and Rust addition",
+    );
+    let startup = disassembly.split("<add_u32>").next().unwrap();
+    assert!(
+        !startup.contains("il\t$3,")
+            && !startup.contains("ilhu\t$3,")
+            && !startup.contains("iohl\t$3,")
+            && !startup.contains("il\t$4,")
+            && !startup.contains("ilhu\t$4,")
+            && !startup.contains("iohl\t$4,"),
+        "startup overwrote incoming argument registers:\n{startup}"
+    );
+
+    let too_many = Command::new(env!("CARGO_BIN_EXE_spu-rustc"))
+        .arg("--target=spu-sony-ps3")
+        .arg("--emit=elf")
+        .arg("--runtime-args")
+        .arg("-o")
+        .arg(temp.join("too-many.elf"))
+        .arg("--rustc")
+        .arg(&rustc)
+        .arg("--assembler")
+        .arg(&assembler)
+        .arg("--linker")
+        .arg(&linker)
+        .arg(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/stack_arg_u32.rs"))
+        .output()
+        .unwrap();
+    assert!(
+        !too_many.status.success(),
+        "runtime entry accepted more than four arguments"
+    );
+    assert!(
+        String::from_utf8_lossy(&too_many.stderr).contains("supports at most four i32 arguments"),
+        "runtime argument limit was not reported clearly:\n{}",
+        String::from_utf8_lossy(&too_many.stderr)
+    );
+
+    fs::remove_dir_all(temp).unwrap();
+}
+
+#[test]
+fn links_a_psl1ght_thread_exit_entry() {
+    let assembler = env::var_os("SPU_AS").unwrap_or_else(|| "spu-as".into());
+    let linker = env::var_os("SPU_LD").unwrap_or_else(|| "spu-ld".into());
+    let objdump = env::var_os("SPU_OBJDUMP").unwrap_or_else(|| "spu-objdump".into());
+    let rustc = env::var_os("RUSTC").unwrap_or_else(|| "rustc".into());
+    for (name, program) in [
+        ("SPU_AS", &assembler),
+        ("SPU_LD", &linker),
+        ("SPU_OBJDUMP", &objdump),
+        ("RUSTC", &rustc),
+    ] {
+        if Command::new(program).arg("--version").output().is_err() {
+            if env::var_os("SPU_REQUIRE_E2E").is_some() {
+                panic!("SPU end-to-end test required, but {name} is unavailable");
+            }
+            eprintln!("skipping PPU thread-exit SPU executable test: {name} is unavailable");
+            return;
+        }
+    }
+
+    let nonce = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_nanos();
+    let temp = env::temp_dir().join(format!(
+        "spu-rustc-thread-exit-{}-{nonce}",
+        std::process::id()
+    ));
+    fs::create_dir(&temp).unwrap();
+    let source = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("examples/scalar_entry.rs");
+    let executable = temp.join("thread-exit.elf");
+    let result = Command::new(env!("CARGO_BIN_EXE_spu-rustc"))
+        .arg("--target=spu-sony-ps3")
+        .arg("--emit=elf")
+        .arg("--thread-exit")
+        .arg("-o")
+        .arg(&executable)
+        .arg("--rustc")
+        .arg(&rustc)
+        .arg("--assembler")
+        .arg(&assembler)
+        .arg("--linker")
+        .arg(&linker)
+        .arg(&source)
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "PSL1GHT thread-exit SPU executable link failed:\n{}\n{}",
+        String::from_utf8_lossy(&result.stdout),
+        String::from_utf8_lossy(&result.stderr)
+    );
+
+    let disassembly = Command::new(&objdump)
+        .arg("-d")
+        .arg(&executable)
+        .output()
+        .unwrap();
+    assert!(
+        disassembly.status.success(),
+        "spu-objdump failed for thread-exit image"
+    );
+    let disassembly = String::from_utf8_lossy(&disassembly.stdout);
+    assert_in_order(
+        &disassembly,
+        &["wrch\t$ch28,$3", "00 00 01 02 \tstop"],
+        "PSL1GHT outbound-status and thread-exit sequence",
+    );
+    fs::remove_dir_all(temp).unwrap();
+}

@@ -1,4 +1,5 @@
 /target/
+/ppu-loader/target/
 *.o
 *.s
 *.elf

@@ -12,6 +12,13 @@ the PPU spec would produce the wrong code. The pinned `rustc 1.99.1` used here d
 list `powerpc64-sony-ps3` among its targets, which shows that a source-tree
 target spec and a released compiler's target list can differ.
 
+The user-supplied [`rust-ps3` project](https://github.com/ZephyrCodesStuff/rust-ps3)
+is a useful PPU-side reference: it has a Rust PPU runtime, a PS3 target setup,
+and direct LV2 syscall support. Its README still lists SPU tooling and
+inter-processor communication as future work, so it does not supply the missing
+SPU compiler backend or `core` support. This repository has not copied its
+code; the small loader here uses the locally available PSL1GHT APIs.
+
 The normal Rust compiler delegates instruction selection, register allocation,
 assembly/object emission, and much of ABI lowering to LLVM. A Rust target JSON
 cannot add a CPU backend that LLVM does not contain. Current LLVM does not
@@ -219,6 +226,11 @@ The current driver:
    function, posts its result to outbound mailbox channel 28, and stops.
    `--entry-args` supplies these image-time words. Both paths can invoke
    `spu-ld` to make an ELF executable.
+   `--runtime-args` leaves incoming `$3` through `$6` intact and forwards them
+   to a function with up to four `i32` parameters. Its optional emulator test
+   uses the emulator's `-r` register presets. This does not yet match or verify
+   PSL1GHT's four 64-bit `sysSpuThreadArgument` fields, PPU effective addresses,
+   or a real PPU-launched SPU thread.
 
 The host LLVM data layout is ignored. These hand-coded ABI assumptions cover
 only the accepted scalar `i32` operations, `i1` comparison results, and up to
@@ -250,8 +262,18 @@ The separate Rust `_start` sample remains a termination stub that immediately
 executes `stop 0`. A second path links a scalar Rust function with minimal
 startup code that initializes the local-store stack pointer, supplies optional
 image-time argument words, posts the function's return word to outbound mailbox
-channel 28, and stops. Neither path initializes an SPE context on the PPU or
-loads an image from a PPU program.
+channel 28, and stops. A third startup variant uses the PSL1GHT SPU thread-exit
+sequence: it posts the result and executes `stop 0x102`.
+
+The `ppu-loader/` prototype is a separate `#![no_std]` Rust PPU executable with
+a small C bridge to PSL1GHT. It opens one SPU ELF, creates a one-thread group,
+starts and joins it, retrieves the thread exit status, and returns that value.
+The default image path is `/app_home/scalar.elf`; the PPU program can also use
+an argv path. Its ELFv1 PPU executable cross-builds with nightly Rust and
+PSL1GHT, but has not been run in RPCS3 or on hardware. The thread argument
+structure is all zeros, and this does not validate the `--runtime-args` path,
+map PPU effective addresses into SPU local store, or perform DMA. See
+`docs/validation.md` for the build evidence and current boundaries.
 
 ## Why not claim a full target yet?
 

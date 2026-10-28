@@ -2256,6 +2256,14 @@ pub fn lower_program_to_spu_assembly(program: &Program) -> Result<String, String
 }
 
 pub fn lower_runtime_startup(function_symbol: &str, arguments: &[u32]) -> String {
+    lower_runtime_startup_with_exit(function_symbol, arguments, false)
+}
+
+pub fn lower_runtime_startup_with_exit(
+    function_symbol: &str,
+    arguments: &[u32],
+    thread_exit: bool,
+) -> String {
     let mut setup = vec!["ilhu $1,4".to_owned()];
     let stack_argument_count = arguments.len().saturating_sub(SPU_ABI_REGISTER_ARGUMENTS);
     if stack_argument_count > 0 {
@@ -2292,9 +2300,24 @@ pub fn lower_runtime_startup(function_symbol: &str, arguments: &[u32]) -> String
         }
     }
     body.push_str(&format!("  brsl $0,{function_symbol}\n"));
-    body.push_str("  wrch $ch28,$3\n  lnop\n  stop 0\n");
+    let stop_code = if thread_exit { "0x102" } else { "0" };
+    body.push_str(&format!("  wrch $ch28,$3\n  lnop\n  stop {stop_code}\n"));
     format!(
         ".text\n.p2align 3\n.globl _start\n.type _start,@function\n_start:\n{body}.size _start,.-_start\n"
+    )
+}
+
+pub fn lower_runtime_startup_passthrough(function_symbol: &str) -> String {
+    lower_runtime_startup_passthrough_with_exit(function_symbol, false)
+}
+
+pub fn lower_runtime_startup_passthrough_with_exit(
+    function_symbol: &str,
+    thread_exit: bool,
+) -> String {
+    let stop_code = if thread_exit { "0x102" } else { "0" };
+    format!(
+        ".text\n.p2align 3\n.globl _start\n.type _start,@function\n_start:\n  ilhu $1,4\n  lnop\n  il $2,0\n  lnop\n  brsl $0,{function_symbol}\n  wrch $ch28,$3\n  lnop\n  stop {stop_code}\n.size _start,.-_start\n"
     )
 }
 
@@ -3168,6 +3191,20 @@ mod tests {
             lower_runtime_startup("add_u32", &[0x1234, 0x1234_5678]),
             ".text\n.p2align 3\n.globl _start\n.type _start,@function\n_start:\n  ilhu $1,4\n  lnop\n  il $2,0\n  lnop\n  il $3,4660\n  lnop\n  ilhu $4,4660\n  lnop\n  iohl $4,22136\n  brsl $0,add_u32\n  wrch $ch28,$3\n  lnop\n  stop 0\n.size _start,.-_start\n"
         );
+    }
+
+    #[test]
+    fn runtime_startup_preserves_incoming_scalar_argument_registers() {
+        assert_eq!(
+            lower_runtime_startup_passthrough("add_u32"),
+            ".text\n.p2align 3\n.globl _start\n.type _start,@function\n_start:\n  ilhu $1,4\n  lnop\n  il $2,0\n  lnop\n  brsl $0,add_u32\n  wrch $ch28,$3\n  lnop\n  stop 0\n.size _start,.-_start\n"
+        );
+    }
+
+    #[test]
+    fn runtime_startup_can_use_the_psl1ght_spu_thread_exit_stop_code() {
+        let startup = lower_runtime_startup_with_exit("scalar_entry", &[], true);
+        assert!(startup.contains("wrch $ch28,$3\n  lnop\n  stop 0x102\n"));
     }
 
     #[test]

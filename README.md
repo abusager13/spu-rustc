@@ -110,9 +110,33 @@ cargo run -- --target spu-sony-ps3 --emit=elf \
   --entry-args=0x1234,0x5678 -o add.elf examples/add_u32.rs
 ```
 
-The argument words are constants embedded by startup; they are not supplied by
-a PPU loader. The end-to-end tests check ELF headers and disassembled
-instructions. `docs/validation.md` records the tested versions and evidence.
+The argument words are constants embedded by startup; the current PPU loader
+does not supply SPU arguments. `--runtime-args` instead forwards up to four
+incoming 32-bit SPU ABI words from `$3` through `$6` to the Rust function. This
+wrapper has an emulator check using register presets. It is not yet verified against
+PSL1GHT's `sysSpuThreadArgument`, which supplies four 64-bit values, and it
+cannot yet pass PPU effective addresses for DMA. The end-to-end tests check ELF
+headers and disassembled instructions. `docs/validation.md` records the tested
+versions and evidence.
+
+### Build the experimental PPU loader
+
+A small Rust PPU application with a PSL1GHT C bridge can open one SPU ELF,
+start one SPU thread, join it, and return the thread's exit status. The first
+loader accepts no SPU arguments and expects the SPU image to use `--thread-exit`
+so the PS3 thread group sees the SPU status. It defaults to
+`/app_home/scalar.elf`; an optional PPU argument selects another image path.
+
+```sh
+cargo run -- --target spu-sony-ps3 --emit=elf --thread-exit \
+  -o scalar.elf examples/scalar_entry.rs
+make -C ppu-loader PS3DEV=/path/to/ps3dev PSL1GHT=/path/to/psl1ght
+```
+
+This builds a big-endian PowerPC64 ELFv1 PPU executable. It has only been
+cross-compiled and inspected; it has not been run in RPCS3 or on a PS3. This
+does not make the SPU output a Rust target and does not add PPU-supplied SPU
+arguments, DMA, or general runtime support.
 
 ### Run the SPU emulator check
 
@@ -134,12 +158,15 @@ underflow, boundary results, and ordinary operations. Startup loads fixed ABI
 argument words, including a full-width constant, and checks the 73rd
 stack-passed argument plus a three-argument stack-slot case; each result must be
 written to the outbound mailbox before the emulator reaches `stop`.
+The script also checks runtime argument forwarding when
+`SPU_EMULATOR_HAS_REG_PRESETS=1` is set for an emulator supporting `-r`.
 
 ```sh
 git clone https://github.com/eth-man/ps3-cell-re-tools.git /tmp/ps3-cell-re-tools
 git -C /tmp/ps3-cell-re-tools checkout 33251f85070744bb93615ea2069c15d0ec7fb796
 make -C /tmp/ps3-cell-re-tools/anergistic anergistic
 export PATH="$HOME/opt/ps3dev/ps3dev/spu/bin:$PATH"
+SPU_EMULATOR_HAS_REG_PRESETS=1 \
 SPU_EMULATOR=/tmp/ps3-cell-re-tools/anergistic/anergistic \
   scripts/test-spu-emulator.sh
 ```
@@ -172,10 +199,12 @@ This is still a machine-code proof of concept, not a complete PS3 SPU
 application toolchain. Its startup supports one scalar function per image,
 with up to 75 image-time argument words (72 registers and three stack slots), and
 returns one word through the outbound mailbox; more than three stack arguments
-are unsupported. There is no Rust
-PPU loader or general runtime. It has no `core` build, SIMD API, local-store
-memory API, DMA, general mailbox API, or synchronization library. Hardware
-execution has not been tested. Details and the remaining work are in
+are unsupported. The experimental `--runtime-args` mode forwards at most four
+incoming 32-bit argument registers, but has not been matched to PS3's 64-bit
+thread arguments. The minimal PPU loader is build-validated only and has not
+been run; it accepts no SPU arguments. There is no SPU `core` build, SIMD API,
+local-store memory API, DMA, general mailbox API, or synchronization library.
+Hardware execution has not been tested. Details and the remaining work are in
 [`docs/architecture.md`](docs/architecture.md) and [`docs/roadmap.md`](docs/roadmap.md).
 
 A separate experiment compiled and emulated one `#![no_core]` identity

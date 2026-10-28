@@ -306,6 +306,53 @@ in this repository.
    mailbox checks; count-ones remains skipped because this emulator build lacks
    `sumb`.
 
+41. Added `--runtime-args` for ELF builds. The generated startup initializes
+   the local-store stack and environment registers, then calls the Rust
+   function without overwriting `$3` through `$6`. It accepts up to four
+   `i32` parameters and rejects a larger signature. The object/link integration
+   test checks the ELF machine and startup instruction order, including that
+   the two input registers used by `add_u32` remain untouched. The optional
+   emulator case seeded `$3 = 0x12345678` and `$4 = 0x5678` with the pinned
+   `anergistic` build's `-r` option; the image reached `stop` and recorded
+   mailbox `0x1234acf0`. `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 69
+   unit tests and all four end-to-end tests. The emulator script completed with
+   the runtime-argument case enabled; count-ones remained skipped because
+   `sumb` is unimplemented. This checks 32-bit register forwarding only. It
+   does not verify how PS3 `sysSpuThreadInitialize` maps its four 64-bit
+   `sysSpuThreadArgument` values, does not test PPU loading, and does not pass
+   PPU effective addresses for DMA.
+
+42. Rechecked toolchain availability while evaluating the PPU-loader step. The
+   pinned Linux toolchain archive matched SHA-256
+   `66afbfc725221d3a6f02f219a6ce47ee793ff6b0890f176a9d10d2c89c91dda5` and
+   contains both `ps3dev/spu` and `ps3dev/ppu`. The extracted PPU GCC is 13.2.
+   The project-pinned Rust 1.99.1 target list still has neither a Sony PS3 PPU
+   nor SPU target. Installed nightly 1.101 lists `powerpc64-sony-ps3`, but no
+   SPU target. A separate `#![no_std]` PPU Rust crate also built as an rlib
+   using `-Z build-std=core`. PSL1GHT was built locally against the extracted
+   toolchain. These checks established a PPU build path, not SPU support.
+43. Added `ppu-loader/`, a Rust `#![no_std]` PPU entry point with a C bridge
+   using PSL1GHT's SPU image and thread APIs. Built it with
+   `make -C ppu-loader PS3DEV=/tmp/ps3dev/ps3dev
+   PSL1GHT=/tmp/psl1ght-install`, Rust nightly `2026-10-26`, and
+   `powerpc64-ps3-elf-gcc`. `ppu-readelf -h` identified the linked output as
+   big-endian ELF64 `EXEC`, machine PowerPC64, ABIv1; `ppu-nm` showed the Rust
+   `main`, C `spu_loader_run`, and PSL1GHT `_start`. The launcher source opens
+   an SPU ELF, creates/starts/joins a one-thread group, and reads the SPU thread
+   exit status. It defaults to `/app_home/scalar.elf` and passes four zero
+   thread arguments. The build does not verify execution, image loading, or
+   status retrieval in RPCS3 or on PS3 hardware. The supplied `rust-ps3`
+   project was inspected as a PPU reference; its README marks SPU tooling as
+   future work, and none of its code is included here.
+44. Reran `scripts/test-spu-emulator.sh` with the pinned `anergistic` binary and
+   register presets enabled. Every enabled case passed, including the
+   `--thread-exit` image, runtime `$3`/`$4` forwarding, the stack-argument
+   cases, arithmetic, shifts, rotates, comparisons, saturating operations,
+   selects, and bit operations. The script skipped `count_ones` because this
+   emulator build has no `sumb` implementation. This does not execute the PPU
+   launcher or verify PS3 thread exit-status retrieval.
+
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
-SPU behavior, a PPU loader, PS3 firmware integration, or physical hardware.
+SPU behavior, runtime execution of the PPU loader, PS3 firmware integration, or
+physical hardware.
