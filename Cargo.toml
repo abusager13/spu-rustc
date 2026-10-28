@@ -1,0 +1,15 @@
+[package]
+name = "spu-rustc"
+version = "0.1.0"
+edition = "2021"
+autoexamples = false
+description = "Experimental Rust-to-Cell-SPU compilation prototype"
+license = "GPL-3.0-only"
+
+[[bin]]
+name = "spu-rustc"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1

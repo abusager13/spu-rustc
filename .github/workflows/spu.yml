@@ -1,0 +1,24 @@
+name: SPU compiler checks
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  native-objects:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install pinned Rust
+        run: rustup toolchain install 1.99.1 --profile minimal
+      - name: Install pinned SPU binutils
+        run: ./scripts/install-spu-toolchain.sh "$RUNNER_TEMP/ps3dev"
+      - name: Test Rust lowering and native SPU objects
+        env:
+          SPU_REQUIRE_E2E: "1"
+          SPU_AS: ${{ runner.temp }}/ps3dev/ps3dev/spu/bin/spu-as
+          SPU_LD: ${{ runner.temp }}/ps3dev/ps3dev/spu/bin/spu-ld
+          SPU_OBJDUMP: ${{ runner.temp }}/ps3dev/ps3dev/spu/bin/spu-objdump
+        run: |
+          export PATH="$RUNNER_TEMP/ps3dev/ps3dev/spu/bin:$PATH"
+          cargo test --offline
