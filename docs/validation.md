@@ -184,6 +184,14 @@ in this repository.
    `0xffffffff`, reach `u32::MAX` without overflow, and produce an ordinary
    non-saturated sum. The count-ones emulator cases remained skipped because
    the pinned emulator's `sumb` instruction is a stub.
+30. Added straight-line LLVM `select i1` lowering with i32 arms. Unit coverage
+   checks compare masks, constant conditions and arms, and rejects non-i1
+   conditions. Object integration tests compiled two Rust conditional examples
+   and inspected `selb`; `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 53
+   unit tests and all three end-to-end tests. The stock emulator passed 74
+   mailbox checks across the complete script, including both selection arms
+   and a conditional whose arms compute arithmetic results. General branches,
+   loops, and `phi` nodes remain unsupported.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

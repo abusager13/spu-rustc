@@ -21,6 +21,7 @@ struct Instruction {
     op: Operation,
     lhs: Operand,
     rhs: Operand,
+    condition: Option<Operand>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -40,6 +41,7 @@ enum Operation {
     Binary(BinaryOp),
     Unary(UnaryOp),
     Compare(Predicate),
+    Select,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -178,6 +180,25 @@ fn parse_scalar_function(module: &str) -> Result<Function, String> {
                     }
                 }
             }
+            if let Some(condition) = &instruction.condition {
+                match condition {
+                    Operand::Value(name) => match value_types.get(name) {
+                        Some(ReturnType::Bool) => {}
+                        Some(ReturnType::I32) => {
+                            return Err(format!("LLVM select condition {name} is not i1"))
+                        }
+                        None => {
+                            return Err(format!(
+                                "LLVM select condition {name} is used before it is defined"
+                            ))
+                        }
+                    },
+                    Operand::Constant(value) if *value == 0 || *value == 1 => {}
+                    Operand::Constant(_) => {
+                        return Err("LLVM select condition constant must be true or false".into())
+                    }
+                }
+            }
             if params.iter().any(|param| param == &instruction.result)
                 || instructions
                     .iter()
@@ -189,10 +210,8 @@ fn parse_scalar_function(module: &str) -> Result<Function, String> {
                 Operation::Binary(_) => ReturnType::I32,
                 Operation::Unary(_) => ReturnType::I32,
                 Operation::Compare(_) => ReturnType::Bool,
+                Operation::Select => ReturnType::I32,
             };
-            if output_type == ReturnType::Bool && return_type != ReturnType::Bool {
-                return Err("integer comparison results may only be returned as Rust bool".into());
-            }
             value_types.insert(instruction.result.clone(), output_type);
             instructions.push(instruction);
             continue;
@@ -387,12 +406,22 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
     if !is_llvm_local(result) {
         return Err(format!("unsupported LLVM result name {result:?}"));
     }
+    if let Some((condition, lhs, rhs)) = parse_select(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Select,
+            lhs,
+            rhs,
+            condition: Some(condition),
+        });
+    }
     if let Some((op, operand)) = parse_ctlz(expression)? {
         return Ok(Instruction {
             result: result.to_owned(),
             op: Operation::Unary(op),
             lhs: operand,
             rhs: Operand::Constant(0),
+            condition: None,
         });
     }
     if let Some(operand) = parse_cttz(expression)? {
@@ -401,6 +430,7 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
             op: Operation::Unary(UnaryOp::CountTrailingZeros),
             lhs: operand,
             rhs: Operand::Constant(0),
+            condition: None,
         });
     }
     if let Some(operand) = parse_ctpop(expression)? {
@@ -409,6 +439,7 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
             op: Operation::Unary(UnaryOp::CountOnes),
             lhs: operand,
             rhs: Operand::Constant(0),
+            condition: None,
         });
     }
     if let Some(operand) = parse_wrapping_abs(expression)? {
@@ -417,6 +448,7 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
             op: Operation::Unary(UnaryOp::WrappingAbs),
             lhs: operand,
             rhs: Operand::Constant(0),
+            condition: None,
         });
     }
     if let Some((op, lhs, rhs)) = parse_funnel_shift(expression)? {
@@ -425,6 +457,7 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
             op: Operation::Binary(op),
             lhs,
             rhs,
+            condition: None,
         });
     }
     if let Some((op, lhs, rhs)) = parse_minmax(expression)? {
@@ -433,6 +466,7 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
             op: Operation::Binary(op),
             lhs,
             rhs,
+            condition: None,
         });
     }
     if let Some((lhs, rhs)) = parse_unsigned_saturating_add(expression)? {
@@ -441,6 +475,7 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
             op: Operation::Binary(BinaryOp::UnsignedSaturatingAdd),
             lhs,
             rhs,
+            condition: None,
         });
     }
     let mut fields = expression.split_whitespace();
@@ -495,7 +530,54 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
         op: operation,
         lhs,
         rhs,
+        condition: None,
     })
+}
+
+fn parse_select(expression: &str) -> Result<Option<(Operand, Operand, Operand)>, String> {
+    let Some(arguments) = expression.strip_prefix("select ") else {
+        return Ok(None);
+    };
+    let mut arguments = arguments.splitn(3, ',');
+    let condition_text = arguments.next().ok_or("LLVM select condition is missing")?;
+    let true_text = arguments
+        .next()
+        .ok_or("LLVM select true value is missing")?;
+    let false_text = arguments
+        .next()
+        .ok_or("LLVM select false value is missing")?;
+    let condition_fields = condition_text.split_whitespace().collect::<Vec<_>>();
+    if !condition_fields.contains(&"i1") {
+        return Err("LLVM select condition must have i1 type".into());
+    }
+    let condition_value = condition_fields
+        .last()
+        .ok_or("LLVM select condition value is missing")?;
+    let condition = match *condition_value {
+        "true" => Operand::Constant(1),
+        "false" => Operand::Constant(0),
+        value => parse_operand(value)?,
+    };
+    if let Operand::Constant(value) = &condition {
+        if *value != 0 && *value != 1 {
+            return Err("LLVM select condition constant must be true or false".into());
+        }
+    }
+    let parse_value = |text: &str, label: &str| -> Result<Operand, String> {
+        let fields = text.split_whitespace().collect::<Vec<_>>();
+        if !fields.contains(&"i32") {
+            return Err(format!("LLVM select {label} value must have i32 type"));
+        }
+        let value = fields
+            .last()
+            .ok_or_else(|| format!("LLVM select {label} value is missing"))?;
+        parse_operand(value)
+    };
+    Ok(Some((
+        condition,
+        parse_value(true_text, "true")?,
+        parse_value(false_text, "false")?,
+    )))
 }
 
 fn parse_operand(value: &str) -> Result<Operand, String> {
@@ -792,10 +874,26 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
     for (index, param) in function.params.iter().enumerate() {
         reg_for.insert(param.clone(), index + 3);
     }
+    let select_conditions = function
+        .instructions
+        .iter()
+        .filter_map(|instruction| {
+            (instruction.op == Operation::Select)
+                .then(|| instruction.condition.as_ref())
+                .flatten()
+        })
+        .filter_map(|condition| match condition {
+            Operand::Value(name) => Some(name.clone()),
+            Operand::Constant(_) => None,
+        })
+        .collect::<BTreeSet<_>>();
     let first_temp = function.params.len() + 3;
     let mut last_use = HashMap::new();
     for (index, instruction) in function.instructions.iter().enumerate() {
-        for operand in [&instruction.lhs, &instruction.rhs] {
+        for operand in [&instruction.lhs, &instruction.rhs]
+            .into_iter()
+            .chain(instruction.condition.iter())
+        {
             if let Operand::Value(value) = operand {
                 last_use.insert(value.clone(), index);
             }
@@ -913,6 +1011,20 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             &mut free_temps,
                         )?);
                     }
+                    Operation::Select => {
+                        operations.extend(lower_select(
+                            dst,
+                            instruction
+                                .condition
+                                .as_ref()
+                                .ok_or("LLVM select condition is missing")?,
+                            &instruction.lhs,
+                            &instruction.rhs,
+                            &reg_for,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
                     Operation::Binary(BinaryOp::UnsignedSaturatingAdd) => {
                         operations.extend(lower_unsigned_saturating_add(
                             dst,
@@ -944,7 +1056,13 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                         }
                     }
                     Operation::Compare(predicate) => {
-                        operations.extend(lower_compare(predicate, dst, lhs_reg, rhs_reg));
+                        operations.extend(lower_compare(
+                            predicate,
+                            dst,
+                            lhs_reg,
+                            rhs_reg,
+                            !select_conditions.contains(&instruction.result),
+                        ));
                     }
                 }
             }
@@ -1013,6 +1131,20 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             &mut free_temps,
                         )?);
                     }
+                    Operation::Select => {
+                        operations.extend(lower_select(
+                            dst,
+                            instruction
+                                .condition
+                                .as_ref()
+                                .ok_or("LLVM select condition is missing")?,
+                            &instruction.lhs,
+                            &instruction.rhs,
+                            &reg_for,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
                     Operation::Binary(BinaryOp::UnsignedSaturatingAdd) => {
                         operations.extend(materialize_i32(dst, *constant));
                         operations.extend(lower_unsigned_saturating_add(
@@ -1029,7 +1161,13 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     }
                     Operation::Compare(predicate) => {
                         operations.extend(materialize_i32(dst, *constant));
-                        operations.extend(lower_compare(predicate, dst, source, dst));
+                        operations.extend(lower_compare(
+                            predicate,
+                            dst,
+                            source,
+                            dst,
+                            !select_conditions.contains(&instruction.result),
+                        ));
                     }
                 }
             }
@@ -1064,6 +1202,20 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             dst,
                             dst,
                             source,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Select => {
+                        operations.extend(lower_select(
+                            dst,
+                            instruction
+                                .condition
+                                .as_ref()
+                                .ok_or("LLVM select condition is missing")?,
+                            &instruction.lhs,
+                            &instruction.rhs,
+                            &reg_for,
                             &mut next_temp,
                             &mut free_temps,
                         )?);
@@ -1114,7 +1266,13 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     }
                     Operation::Compare(predicate) => {
                         operations.extend(materialize_i32(dst, *constant));
-                        operations.extend(lower_compare(predicate, dst, dst, source));
+                        operations.extend(lower_compare(
+                            predicate,
+                            dst,
+                            dst,
+                            source,
+                            !select_conditions.contains(&instruction.result),
+                        ));
                     }
                 }
             }
@@ -1132,7 +1290,16 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     operations.extend(materialize_i32(dst, lhs.wrapping_abs()));
                 }
                 Operation::Compare(predicate) => {
-                    let result = evaluate_predicate(predicate, *lhs, *rhs) as i32;
+                    let comparison = evaluate_predicate(predicate, *lhs, *rhs);
+                    let result = if select_conditions.contains(&instruction.result) {
+                        if comparison {
+                            -1
+                        } else {
+                            0
+                        }
+                    } else {
+                        comparison as i32
+                    };
                     operations.extend(materialize_i32(dst, result));
                 }
                 Operation::Binary(BinaryOp::RotateLeft) => {
@@ -1171,6 +1338,20 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                         ((*lhs as u32).saturating_add(*rhs as u32)) as i32,
                     ));
                 }
+                Operation::Select => {
+                    operations.extend(lower_select(
+                        dst,
+                        instruction
+                            .condition
+                            .as_ref()
+                            .ok_or("LLVM select condition is missing")?,
+                        &instruction.lhs,
+                        &instruction.rhs,
+                        &reg_for,
+                        &mut next_temp,
+                        &mut free_temps,
+                    )?);
+                }
                 Operation::Binary(_) => {
                     return Err("constant-only binary operations are not supported".into())
                 }
@@ -1178,7 +1359,10 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
         }
         reg_for.insert(instruction.result.clone(), dst);
 
-        for operand in [&instruction.lhs, &instruction.rhs] {
+        for operand in [&instruction.lhs, &instruction.rhs]
+            .into_iter()
+            .chain(instruction.condition.iter())
+        {
             if let Operand::Value(value) = operand {
                 if last_use.get(value) == Some(&index) {
                     if let Some(reg) = reg_for.get(value).copied() {
@@ -1382,6 +1566,88 @@ fn lower_minmax(
     Ok(operations)
 }
 
+fn lower_select(
+    destination: usize,
+    condition: &Operand,
+    when_true: &Operand,
+    when_false: &Operand,
+    reg_for: &HashMap<String, usize>,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    if let Operand::Constant(value) = condition {
+        let selected = if *value == 1 { when_true } else { when_false };
+        return match selected {
+            Operand::Value(name) => {
+                let source = reg_for
+                    .get(name)
+                    .ok_or_else(|| format!("unknown SPU select value {name}"))?;
+                Ok(vec![format!("or ${destination},${source},${source}")])
+            }
+            Operand::Constant(value) => Ok(materialize_i32(destination, *value)),
+        };
+    }
+
+    let Operand::Value(condition_name) = condition else {
+        return Err("LLVM select condition must be an i1 value".into());
+    };
+    let condition_register = reg_for
+        .get(condition_name)
+        .ok_or_else(|| format!("unknown SPU select condition {condition_name}"))?;
+    let mut operations = Vec::new();
+    let mut owned = Vec::new();
+    let true_register = select_arm_register(
+        when_true,
+        reg_for,
+        next_temp,
+        free_temps,
+        &mut operations,
+        &mut owned,
+    )?;
+    let false_register = match select_arm_register(
+        when_false,
+        reg_for,
+        next_temp,
+        free_temps,
+        &mut operations,
+        &mut owned,
+    ) {
+        Ok(register) => register,
+        Err(error) => {
+            free_temps.extend(owned);
+            return Err(error);
+        }
+    };
+    operations.push(format!(
+        "selb ${destination},${false_register},${true_register},${condition_register}"
+    ));
+    free_temps.extend(owned);
+    Ok(operations)
+}
+
+fn select_arm_register(
+    operand: &Operand,
+    reg_for: &HashMap<String, usize>,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+    operations: &mut Vec<String>,
+    owned: &mut Vec<usize>,
+) -> Result<usize, String> {
+    match operand {
+        Operand::Value(name) => reg_for
+            .get(name)
+            .copied()
+            .ok_or_else(|| format!("unknown SPU select value {name}")),
+        Operand::Constant(value) => {
+            let register = allocate_scratch(next_temp, free_temps)
+                .map_err(|_| "LLVM select needs a caller-saved register for each constant arm")?;
+            owned.push(register);
+            operations.extend(materialize_i32(register, *value));
+            Ok(register)
+        }
+    }
+}
+
 fn lower_unsigned_saturating_add(
     destination: usize,
     lhs: usize,
@@ -1571,7 +1837,13 @@ fn lower_variable_rotate_right(
     Ok(operations)
 }
 
-fn lower_compare(predicate: Predicate, destination: usize, lhs: usize, rhs: usize) -> Vec<String> {
+fn lower_compare(
+    predicate: Predicate,
+    destination: usize,
+    lhs: usize,
+    rhs: usize,
+    normalize_bool: bool,
+) -> Vec<String> {
     let (instruction, lhs, rhs, invert) = match predicate {
         Predicate::Eq => ("ceq", lhs, rhs, false),
         Predicate::Ne => ("ceq", lhs, rhs, true),
@@ -1588,9 +1860,11 @@ fn lower_compare(predicate: Predicate, destination: usize, lhs: usize, rhs: usiz
     if invert {
         operations.push(format!("nor ${destination},${destination},${destination}"));
     }
-    // SPU compare instructions produce an all-ones word for true. Rust's C
-    // ABI bool is zero-extended, so normalize it to an integer 0 or 1.
-    operations.push(format!("andi ${destination},${destination},1"));
+    if normalize_bool {
+        // SPU compare instructions produce an all-ones word for true. Rust's C
+        // ABI bool is zero-extended, so normalize it to an integer 0 or 1.
+        operations.push(format!("andi ${destination},${destination},1"));
+    }
     operations
 }
 
@@ -2053,6 +2327,41 @@ mod tests {
             assembly.contains("clgt $4,$3,$5\n  lnop\n  or $4,$5,$4"),
             "{assembly}"
         );
+    }
+
+    #[test]
+    fn lowers_compare_selected_values_without_normalizing_the_condition() {
+        let module = "define i32 @f(i32 %a, i32 %b) {\n  %condition = icmp sgt i32 %a, 0\n  %selected = select i1 %condition, i32 %a, i32 %b\n  ret i32 %selected\n}\n";
+        let function = parse_single_i32_binary_function(module).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert_eq!(
+            assembly,
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  il $5,0\n  lnop\n  cgt $5,$3,$5\n  lnop\n  selb $3,$4,$3,$5\n  bi $0\n.size f,.-f\n"
+        );
+    }
+
+    #[test]
+    fn folds_constant_select_conditions_and_materializes_select_arms() {
+        let constant_condition = "define i32 @f(i32 %a) {\n  %selected = select i1 true, i32 %a, i32 99\n  ret i32 %selected\n}\n";
+        let function = parse_single_i32_binary_function(constant_condition).unwrap();
+        assert!(lower_to_spu_assembly(&function)
+            .unwrap()
+            .contains("or $3,$3,$3\n  bi $0"));
+
+        let constant_arm = "define i32 @f(i32 %a) {\n  %condition = icmp eq i32 %a, 0\n  %selected = select i1 %condition, i32 1234, i32 %a\n  ret i32 %selected\n}\n";
+        let function = parse_single_i32_binary_function(constant_arm).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(assembly.contains("il $5,1234"), "{assembly}");
+        assert!(assembly.contains("selb $3,$3,$5,$4"), "{assembly}");
+        assert!(!assembly.contains("andi $4,$4,1"), "{assembly}");
+    }
+
+    #[test]
+    fn rejects_a_non_bool_select_condition() {
+        let module = "define i32 @f(i32 %condition, i32 %value) {\n  %selected = select i1 %condition, i32 %value, i32 0\n  ret i32 %selected\n}\n";
+        assert!(parse_single_i32_binary_function(module)
+            .unwrap_err()
+            .contains("is not i1"));
     }
 
     #[test]

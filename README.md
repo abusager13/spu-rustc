@@ -14,8 +14,9 @@ flag names the prototype's output architecture.
 Supported scalar functions have zero to 72 `i32` ABI parameters and straight-
 line `i32` add, subtract, wrapping multiply, bitwise, shift, rotate,
 `leading_zeros`, `trailing_zeros`, `leading_ones`, `trailing_ones`, and
-`count_ones` operations, unsigned `u32::saturating_add`, signed and unsigned
-`min`/`max`, and signed `i32::wrapping_abs`. Rust `wrapping_shl` and
+`count_ones` operations, scalar conditional `select`, unsigned
+`u32::saturating_add`, signed and unsigned `min`/`max`, and signed
+`i32::wrapping_abs`. Rust `wrapping_shl` and
 `wrapping_shr` mask the shift count to five bits; signed right shifts use
 arithmetic semantics.
 `rotate_left` and `rotate_right` use the SPU rotate instructions and wrap
@@ -37,8 +38,12 @@ parameter, an operation result, or any 32-bit literal. Immediate forms are
 used where supported and larger constants are materialized in a register. The
 examples include scalar operations, variable and constant multiplication and
 rotations, leading/trailing zero and one counts, population counts, wrapping
-absolute value, signed and unsigned min/max, three- and eight-argument sums,
-shifts, and signed and unsigned comparisons.
+absolute value, signed and unsigned min/max, saturating addition, conditional
+selection, three- and eight-argument sums, shifts, and signed and unsigned
+comparisons.
+A Rust conditional expression is supported only when host `rustc` lowers it to
+straight-line LLVM `select`; general branches, loops, and `phi` nodes remain
+unsupported.
 A separate minimal `_start` example can be linked to an SPU ELF executable; it
 immediately runs the native SPU `stop 0` instruction. See [`examples`](examples)
 and the design notes in [`docs`](docs).
@@ -98,10 +103,11 @@ instructions. `docs/validation.md` records the tested versions and evidence.
 ### Run the SPU emulator check
 
 The optional emulator check uses the standalone `anergistic` SPU emulator. It
-compiles and runs a Rust entry plus Rust arithmetic, bitwise, shift, rotate,
-leading-zero, trailing-zero, leading-one, trailing-one, wrapping-absolute,
-signed and unsigned min/max, unsigned saturating addition, and comparison
-functions. It checks variable rotate counts 0, 1, 31, 32, 33, and
+compiles and runs a Rust entry plus arithmetic, bitwise, shift, rotate,
+bit-count, wrapping-absolute, signed and unsigned min/max, unsigned saturating
+addition, comparison, and conditional-selection functions. It checks variable
+rotate counts 0, 1,
+31, 32, 33, and
 `0xffffffff`, constant rotations, and leading-zero results for zero and
 representative bit patterns. It checks trailing-zero results for zero, low and
 high bits, and mixed patterns. The one-count checks include zero and all-ones

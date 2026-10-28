@@ -47,6 +47,11 @@ sign bit, negative operands, and equal values.
 Unsigned `u32::saturating_add` lowers `llvm.uadd.sat.i32` to an SPU sum,
 unsigned overflow comparison, and all-ones mask. Emulator cases cover overflow,
 a non-overflowing result of `u32::MAX`, and ordinary addition.
+Straight-line LLVM `select i1` with `i32` arms lowers to SPU `selb`. When an
+`icmp` result feeds a select, the compare mask stays all-ones/all-zero; a
+standalone returned Rust `bool` remains normalized to 0 or 1. This does not
+add general LLVM branches, loops, or `phi`-node support. Emulator cases cover
+both selected arms and both arms computing an arithmetic result.
 
 ## Milestone 2: scalar entry image
 

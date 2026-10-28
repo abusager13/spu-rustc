@@ -125,10 +125,9 @@ The current driver:
    sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
    `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
    `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, signed
-   and unsigned `min`/`max`, unsigned `u32::saturating_add`, or integer
-   comparisons. It returns a parameter,
-   computed `i32`, Rust `bool`, or
-   32-bit literal.
+   and unsigned `min`/`max`, unsigned `u32::saturating_add`, scalar `select`, or
+   integer comparisons. It returns a parameter, computed `i32`, Rust `bool`, or
+   a 32-bit literal.
    Add/subtract, logic, shift, and rotate
    immediates are used when the SPU encoding permits; multiply operands and
    other constants are materialized in a temporary register. `icmp` supports
@@ -151,6 +150,9 @@ The current driver:
    Unsigned `u32::saturating_add` accepts `llvm.uadd.sat.i32`, adds into a
    temporary, compares the wrapped sum with an addend using `clgt`, and ORs the
    overflow mask into the returned value.
+   `select i1` accepts an i1 condition and i32 arms and lowers to `selb`;
+   comparison masks used by a select remain all-ones or all-zero. This only
+   accepts straight-line `select` instructions and does not lower `br` or `phi`.
 4. Assigns parameters to C ABI registers `$3` through `$74`, uses caller-saved
    registers `$3` through `$79` for computed values, and reuses temporary
    registers after each value's last use. It expands 32-bit multiplication

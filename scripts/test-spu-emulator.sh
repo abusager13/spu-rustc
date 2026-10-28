@@ -230,6 +230,15 @@ run_case saturating-add-no-overflow "$tmp/saturating_add_u32.elf" 12345778
 compile_entry saturating_add_u32 0x80000000,0x80000000
 run_case saturating-add-two-high-values "$tmp/saturating_add_u32.elf" ffffffff
 
+compile_entry select_i32 10,20
+run_case select-signed-true-arm  "$tmp/select_i32.elf" 0000000a
+compile_entry select_i32 0x80000000,20
+run_case select-signed-false-arm "$tmp/select_i32.elf" 00000014
+compile_entry select_computed_i32 10,20
+run_case select-computed-true-arm "$tmp/select_computed_i32.elf" 0000001b
+compile_entry select_computed_i32 0xfffffff6,0x12345678
+run_case select-computed-false-arm "$tmp/select_computed_i32.elf" edcba98e
+
 if [[ "${SPU_EMULATOR_HAS_SUMB:-0}" == "1" ]]; then
     compile_entry count_ones_u32 0
     run_case count-ones-zero "$tmp/count_ones_u32.elf" 00000000

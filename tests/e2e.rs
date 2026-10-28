@@ -92,6 +92,8 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("min_u32", "selb\t$3,$4,$3,$5"),
         ("max_u32", "selb\t$3,$3,$4,$5"),
         ("saturating_add_u32", "clgt\t$3,$3,$5"),
+        ("select_i32", "selb\t$3"),
+        ("select_computed_i32", "selb\t$3"),
         ("cmp_eq_u32", "ceq\t$3,$3,$4"),
         ("cmp_ne_u32", "nor\t$3,$3,$3"),
         ("cmp_slt_i32", "cgt\t$3,$4,$3"),
@@ -305,6 +307,18 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
                     "or\t$3,$5,$3",
                 ],
                 name,
+            );
+        }
+        if name == "select_i32" || name == "select_computed_i32" {
+            let selection = disassembly.find("selb\t$3").unwrap();
+            let prefix = &disassembly[..selection];
+            assert!(
+                prefix.contains("cgt\t"),
+                "select condition compare missing in {name}:\n{disassembly}"
+            );
+            assert!(
+                !prefix.contains("andi\t"),
+                "select condition was normalized to 0/1 before selb in {name}:\n{disassembly}"
             );
         }
         if name.starts_with("cmp_") {
