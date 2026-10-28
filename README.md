@@ -14,7 +14,7 @@ flag names the prototype's output architecture.
 Supported scalar functions have zero to 75 `i32` ABI parameters: 72 in the SPU
 argument registers and up to three stack-passed arguments. They support
 straight-line `i32` add, subtract, wrapping multiply, bitwise operations
-(including unary `!`), shifts, and rotates,
+(including unary `!`), wrapping negation, shifts, and rotates,
 `leading_zeros`, `trailing_zeros`, `leading_ones`, `trailing_ones`, and
 `count_ones` operations, scalar conditional `select`, unsigned
 `u32::saturating_add` and `u32::saturating_sub`, signed and unsigned `min`/`max`,

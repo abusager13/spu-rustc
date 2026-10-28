@@ -154,8 +154,7 @@ The current driver:
 3. Accepts one function with zero to 75 named `i32` parameters: 72 register
    arguments plus up to three stack-passed arguments. More stack arguments are
    rejected. It supports a straight-line
-   sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor` (including
-   Rust unary `!`), `shl`, `lshr`,
+   sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
    `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
    `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, signed
    and unsigned `min`/`max`, unsigned `u32::saturating_add` and
@@ -167,7 +166,8 @@ The current driver:
    immediates are used when the SPU encoding permits; multiply operands and
    other constants are materialized in a temporary register. `icmp` supports
    equality plus all signed and unsigned order predicates. Comparison masks
-   become Rust bool's `0` or `1`.
+   become Rust bool's `0` or `1`. Rust unary `!` lowers to SPU `nor`, and
+   `wrapping_neg` lowers to SPU `sfi`.
    Rotate lowering accepts LLVM `fshl`/`fshr` only when the first two inputs
    match, the form used by Rust's `rotate_left` and `rotate_right` methods.
    `leading_zeros` accepts `llvm.ctlz.i32` only when its zero-undef flag is

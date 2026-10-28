@@ -121,6 +121,19 @@ run_case bitwise-not-zero "$tmp/not_u32.elf" ffffffff
 compile_entry not_u32 0x12345678
 run_case bitwise-not-pattern "$tmp/not_u32.elf" edcba987
 
+compile_entry wrapping_neg_u32 0
+run_case wrapping-neg-zero "$tmp/wrapping_neg_u32.elf" 00000000
+compile_entry wrapping_neg_u32 1
+run_case wrapping-neg-one "$tmp/wrapping_neg_u32.elf" ffffffff
+compile_entry wrapping_neg_u32 0x80000000
+run_case wrapping-neg-high-bit "$tmp/wrapping_neg_u32.elf" 80000000
+compile_entry wrapping_neg_u32 0x12345678
+run_case wrapping-neg-pattern "$tmp/wrapping_neg_u32.elf" edcba988
+compile_entry wrapping_neg_i32 0xffffffff
+run_case signed-wrapping-neg-negative-one "$tmp/wrapping_neg_i32.elf" 00000001
+compile_entry wrapping_neg_i32 0x80000000
+run_case signed-wrapping-neg-minimum "$tmp/wrapping_neg_i32.elf" 80000000
+
 compile_entry wrapping_shl_u32 1,32
 run_case wrapping-left-shift "$tmp/wrapping_shl_u32.elf" 00000001
 compile_entry wrapping_shr_u32 0x80000001,33

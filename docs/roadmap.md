@@ -32,6 +32,9 @@ representative bit patterns. Rust `count_ones` lowers `llvm.ctpop.i32` to
 emulator results cover zero, one, the high bit, mixed byte patterns, and all
 ones when using an emulator build that implements `sumb`. See
 `docs/validation.md` for the pinned emulator's `sumb` limitation.
+Rust unary bitwise NOT lowers to `nor`, and `wrapping_neg` lowers the LLVM
+`sub i32 0, value` form to SPU `sfi`; both have native-object and emulator
+checks.
 Rust `trailing_zeros` lowers the defined-zero `cttz.i32` form through a native
 SPU compare/negate/and/`clz` sequence; zero is explicitly corrected to 32.
 Emulator tests cover zero, low and high bits, and mixed patterns. Rust

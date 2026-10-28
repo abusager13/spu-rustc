@@ -296,6 +296,16 @@ in this repository.
    all three end-to-end tests. The emulator passed 100 mailbox checks, with
    count-ones skipped because this emulator build lacks `sumb`.
 
+40. Rust `u32::wrapping_neg` and `i32::wrapping_neg` emit `sub i32 0, value`.
+   GCC 9.5 lowers the same expression to `sfi $3,$3,0`; the Rust backend
+   now uses that instruction directly instead of materializing zero and
+   subtracting. Unit and object tests cover the lowering for both Rust types,
+   and emulator cases check zero, one, the high bit, a mixed full-width value,
+   signed negative one, and `i32::MIN`. `SPU_REQUIRE_E2E=1 cargo test --offline`
+   passed 68 unit tests and all three end-to-end tests. The emulator passed 106
+   mailbox checks; count-ones remains skipped because this emulator build lacks
+   `sumb`.
+
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
 SPU behavior, a PPU loader, PS3 firmware integration, or physical hardware.

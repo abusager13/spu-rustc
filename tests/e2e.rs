@@ -61,6 +61,8 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("or_u32", "or\t$3,$3,$4"),
         ("xor_u32", "xor\t$3,$3,$4"),
         ("not_u32", "nor\t$3,$3,$3"),
+        ("wrapping_neg_u32", "sfi\t$3,$3,0"),
+        ("wrapping_neg_i32", "sfi\t$3,$3,0"),
         ("increment_u32", "ai\t$3,$3,1"),
         ("and_low_byte", "andi\t$3,$3,255"),
         ("or_low_bit", "ori\t$3,$3,1"),

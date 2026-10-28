@@ -1010,6 +1010,7 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
     let mut next_temp = first_temp;
     for (index, instruction) in function.instructions.iter().enumerate() {
         let needs_constant_register = match (instruction.op, &instruction.lhs, &instruction.rhs) {
+            (Operation::Binary(BinaryOp::Sub), Operand::Constant(0), Operand::Value(_)) => false,
             (Operation::Binary(BinaryOp::Xor), Operand::Value(_), Operand::Constant(-1))
             | (Operation::Binary(BinaryOp::Xor), Operand::Constant(-1), Operand::Value(_)) => false,
             (
@@ -1357,6 +1358,9 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             &mut free_temps,
                         )?);
                     }
+                    Operation::Binary(BinaryOp::Sub) if *constant == 0 => {
+                        operations.push(format!("sfi ${dst},${source},0"));
+                    }
                     Operation::Binary(op) if is_saturating(op) => {
                         operations.extend(materialize_i32(dst, *constant));
                         operations.extend(lower_saturating(
@@ -1648,6 +1652,9 @@ fn lower_constant_binary(
     value: i32,
     constant_is_lhs: bool,
 ) -> Result<Vec<String>, String> {
+    if op == BinaryOp::Sub && value == 0 && constant_is_lhs {
+        return Ok(vec![format!("sfi ${destination},${source},0")]);
+    }
     if op == BinaryOp::Xor && value == -1 {
         return Ok(vec![format!("nor ${destination},${source},${source}")]);
     }
@@ -2473,6 +2480,15 @@ mod tests {
         assert!(lower_to_spu_assembly(&function)
             .unwrap()
             .contains("ai $3,$3,-1"));
+    }
+
+    #[test]
+    fn lowers_wrapping_negation_to_the_spu_subtract_from_immediate_instruction() {
+        let function = parse_single_i32_binary_function(&one_param_ir("sub", "0, %a")).unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&function).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  sfi $3,$3,0\n  bi $0\n.size f,.-f\n"
+        );
     }
 
     #[test]
