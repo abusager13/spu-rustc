@@ -218,8 +218,10 @@ Hardware execution has not been tested. Details and the remaining work are in
 
 A separate experiment compiled and emulated one `#![no_core]` identity
 function through a legacy `rustc_codegen_gcc` adapter using temporary API
-compatibility shims and a PowerPC placeholder target JSON. It is not integrated
-into this project and does not add a Rust SPU target; see the
+compatibility shims. Its custom target sets `arch: "spu"` (visible to Rust's
+`target_arch` cfg) but uses a PowerPC LLVM triple as a placeholder. The route is
+not integrated into this project and does not provide a supported Rust SPU
+target or `core`; see the
 [`validation record`](docs/validation.md#validation-record) for the exact scope
 and limitations.
 

@@ -126,16 +126,18 @@ unverified at runtime. It passes no arguments to the SPU image.
    with Rust's LLVM backend. A follow-up check found that the GCC snapshot
    pinned by the current `rustc_codegen_gcc` checkout has removed SPU support:
    `spu*-*-*` is in its unsupported-target list, and the SPU machine description
-   is absent. An isolated legacy `rustc_codegen_gcc` experiment did compile and
-   emulate one `#![no_core]` identity function through GCC 9.5 `libgccjit`, but
-   it required temporary API remapping, 33 no-op compatibility symbols, and a
-   PowerPC placeholder target JSON. That is evidence for a research route, not
-   a supported Rust SPU target; a constant-return probe failed, and the
-   experiment provides no `core` support. The current plugin/API mismatch and
-   unsupported GCC snapshot remain. Advancing this route requires a maintained
-   Rust/GCC pairing, clean API compatibility, a real SPU target specification,
-   and full Rust ABI validation. Preserve historical LLVM tests as backend
-   support grows.
+   is absent. An isolated legacy `rustc_codegen_gcc` experiment compiled and
+   emulated one `#![no_core]` Rust-ABI identity function through GCC 9.5
+   `libgccjit`. It needed temporary API remapping, 33 no-op compatibility
+   symbols, and a custom JSON with `arch: "spu"` plus a PowerPC LLVM-triple
+   placeholder. This proves one route to native Rust-generated SPU code, not a
+   supported project target. A `#![no_std]` probe using `core` reached backend
+   code generation but panicked on a GCC JIT two-byte vector type; Cargo also
+   could not find target `compiler_builtins`. The old compiler rejects
+   `extern "C"` for `arch: "spu"`. Advancing this route requires a maintained
+   Rust/GCC pairing, clean API compatibility, vector lowering, target runtime
+   support, and full Rust ABI validation. Preserve historical LLVM tests as
+   backend support grows.
 6. Define and implement a Rust SPU target specification, full calling
    convention and data layout, relocations, stack frames, memory operations,
    and linker support; build `core` with `#![no_std]` and `panic=abort`.

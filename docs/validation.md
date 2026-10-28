@@ -376,6 +376,24 @@ in this repository.
    offsets 0, 4, 8, and 12 while preserving the other three preloaded words
    each time. The full script passed; `count_ones` remains skipped because
    this emulator does not implement `sumb`.
+48. Revisited the legacy Rust codegen experiment with nightly rustc
+   `1.59.0-nightly (78fd0f633 2021-12-29)`, the 2021 `rustc_codegen_gcc`
+   adapter, and the host-shared GCC 9.5 SPU `libgccjit` build. A custom target
+   JSON with `arch: "spu"` reports `target_arch="spu"` and the expected
+   32-bit, big-endian cfg; its `llvm-target` remains the PowerPC placeholder
+   `powerpc-unknown-none` because stock LLVM has no CellSPU backend. A Rust-ABI
+   `#![no_core]` identity function compiled to ELF32 big-endian `EM_SPU`, linked
+   with a small SPU assembly entry point, and ran in `anergistic`; it returned
+   42 through mailbox channel 28. This experiment uses an adapter patched for
+   GCC 9.5 plus a temporary shim providing 33 unused newer API symbols. It is
+   not wired into this repository and does not establish a supported Rust
+   target. The same old compiler rejects `extern "C"` for `arch: "spu"`. A
+   direct path-dependency probe using `core` and `u32::wrapping_add` reached
+   code generation but the adapter panicked on `unsigned char` vector size 2;
+   Cargo then also reported that it could not find `compiler_builtins` for the
+   target. No `core`-using function was produced or run. These checks show
+   progress on a narrow codegen route while leaving the target backend, C ABI,
+   and `core` support unresolved.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
