@@ -169,6 +169,21 @@ in this repository.
    three end-to-end tests. The stock emulator returned 0, 5, 5, `0x80000000`,
    and `0x7fffffff` for zero, positive five, negative five, `i32::MIN`, and
    `i32::MAX`; each image reached `stop` and wrote the expected mailbox word.
+28. Added signed and unsigned scalar `min`/`max` lowering for LLVM's `smin`,
+   `smax`, `umin`, and `umax` intrinsics. SPU object tests assembled each
+   compare-and-`selb` sequence and checked its disassembly. `SPU_REQUIRE_E2E=1
+   cargo test --offline` passed all 49 unit tests and all three end-to-end
+   tests. The stock emulator script passed the existing scalar cases and new
+   signed and unsigned min/max cases, including comparisons across zero and
+   `0x80000000`, negative operands, and equal values. As before, the pinned
+   emulator skipped `count_ones` cases because its `sumb` instruction is a stub.
+29. Added unsigned `u32::saturating_add` lowering from `llvm.uadd.sat.i32`.
+   Object tests assembled and inspected the native add/compare/OR sequence.
+   `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 50 unit tests and all
+   three end-to-end tests. The stock emulator passed cases that overflow to
+   `0xffffffff`, reach `u32::MAX` without overflow, and produce an ordinary
+   non-saturated sum. The count-ones emulator cases remained skipped because
+   the pinned emulator's `sumb` instruction is a stub.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

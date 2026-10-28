@@ -87,6 +87,11 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("trailing_ones_u32", "ceqi\t$5,$4,0"),
         ("count_ones_u32", "cntb\t$3,$3"),
         ("wrapping_abs_i32", "rotmai\t$4,$3,-31"),
+        ("min_i32", "selb\t$3,$4,$3,$5"),
+        ("max_i32", "selb\t$3,$3,$4,$5"),
+        ("min_u32", "selb\t$3,$4,$3,$5"),
+        ("max_u32", "selb\t$3,$3,$4,$5"),
+        ("saturating_add_u32", "clgt\t$3,$3,$5"),
         ("cmp_eq_u32", "ceq\t$3,$3,$4"),
         ("cmp_ne_u32", "nor\t$3,$3,$3"),
         ("cmp_slt_i32", "cgt\t$3,$4,$3"),
@@ -281,6 +286,25 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
                 &disassembly,
                 &["rotmai\t$4,$3,-31", "xor\t$3,$3,$4", "sf\t$3,$4,$3"],
                 "wrapping_abs_i32",
+            );
+        }
+        if name == "min_i32" || name == "max_i32" {
+            assert_in_order(&disassembly, &["cgt\t$5,$4,$3", "lnop", "selb\t$3"], name);
+        }
+        if name == "min_u32" || name == "max_u32" {
+            assert_in_order(&disassembly, &["clgt\t$5,$4,$3", "lnop", "selb\t$3"], name);
+        }
+        if name == "saturating_add_u32" {
+            assert_in_order(
+                &disassembly,
+                &[
+                    "a\t$5,$3,$4",
+                    "lnop",
+                    "clgt\t$3,$3,$5",
+                    "lnop",
+                    "or\t$3,$5,$3",
+                ],
+                name,
             );
         }
         if name.starts_with("cmp_") {

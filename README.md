@@ -14,8 +14,9 @@ flag names the prototype's output architecture.
 Supported scalar functions have zero to 72 `i32` ABI parameters and straight-
 line `i32` add, subtract, wrapping multiply, bitwise, shift, rotate,
 `leading_zeros`, `trailing_zeros`, `leading_ones`, `trailing_ones`, and
-`count_ones` operations, plus signed `i32::wrapping_abs`. Rust `wrapping_shl`
-and `wrapping_shr` mask the shift count to five bits; signed right shifts use
+`count_ones` operations, unsigned `u32::saturating_add`, signed and unsigned
+`min`/`max`, and signed `i32::wrapping_abs`. Rust `wrapping_shl` and
+`wrapping_shr` mask the shift count to five bits; signed right shifts use
 arithmetic semantics.
 `rotate_left` and `rotate_right` use the SPU rotate instructions and wrap
 counts modulo 32. `leading_zeros` uses SPU `clz`, including a result of 32 for
@@ -26,14 +27,18 @@ using the leading- or trailing-zero sequence. `count_ones` uses SPU `cntb`,
 `sumb`, and `xshw` instructions.
 `wrapping_abs` builds a sign mask with `rotmai`, then uses XOR and subtraction;
 it preserves `i32::MIN` with wrapping semantics.
+Signed and unsigned `min`/`max` use the corresponding SPU compare and `selb`
+instructions to select a result.
+Unsigned `saturating_add` detects a wrapped result with `clgt` and applies an
+overflow mask with `or` to return `u32::MAX` on overflow.
 Equality and signed or unsigned comparisons can return Rust `bool`, normalized
 to `0` or `1` in the SPU result register. Functions may also return a
 parameter, an operation result, or any 32-bit literal. Immediate forms are
 used where supported and larger constants are materialized in a register. The
 examples include scalar operations, variable and constant multiplication and
 rotations, leading/trailing zero and one counts, population counts, wrapping
-absolute value, three- and eight-argument sums, shifts, and signed and unsigned
-comparisons.
+absolute value, signed and unsigned min/max, three- and eight-argument sums,
+shifts, and signed and unsigned comparisons.
 A separate minimal `_start` example can be linked to an SPU ELF executable; it
 immediately runs the native SPU `stop 0` instruction. See [`examples`](examples)
 and the design notes in [`docs`](docs).
@@ -94,14 +99,17 @@ instructions. `docs/validation.md` records the tested versions and evidence.
 
 The optional emulator check uses the standalone `anergistic` SPU emulator. It
 compiles and runs a Rust entry plus Rust arithmetic, bitwise, shift, rotate,
-leading-zero, trailing-zero, leading-one, trailing-one, wrapping-absolute, and
-comparison functions. It checks variable rotate counts 0, 1, 31, 32, 33, and
+leading-zero, trailing-zero, leading-one, trailing-one, wrapping-absolute,
+signed and unsigned min/max, unsigned saturating addition, and comparison
+functions. It checks variable rotate counts 0, 1, 31, 32, 33, and
 `0xffffffff`, constant rotations, and leading-zero results for zero and
 representative bit patterns. It checks trailing-zero results for zero, low and
 high bits, and mixed patterns. The one-count checks include zero and all-ones
 inputs. The wrapping-absolute checks include positive, negative, minimum, and
-maximum `i32` values. Startup loads fixed ABI argument words, including a
-full-width constant; each
+maximum `i32` values. Min/max checks cover signed and unsigned order across the
+sign bit and equal operands. Saturating-add checks cover overflow, a result of
+`u32::MAX` without overflow, and ordinary addition. Startup loads fixed ABI
+argument words, including a full-width constant; each
 result must be written to the outbound mailbox before the emulator reaches
 `stop`.
 

@@ -199,6 +199,37 @@ run_case wrapping-abs-i32-min "$tmp/wrapping_abs_i32.elf" 80000000
 compile_entry wrapping_abs_i32 0x7fffffff
 run_case wrapping-abs-i32-max "$tmp/wrapping_abs_i32.elf" 7fffffff
 
+compile_entry min_i32 0x80000000,0x7fffffff
+run_case signed-min-crosses-zero "$tmp/min_i32.elf" 80000000
+compile_entry min_i32 0xffffffff,0x80000000
+run_case signed-min-negative-order "$tmp/min_i32.elf" 80000000
+compile_entry max_i32 0x80000000,0x7fffffff
+run_case signed-max-crosses-zero "$tmp/max_i32.elf" 7fffffff
+compile_entry max_i32 0xffffffff,0x80000000
+run_case signed-max-negative-order "$tmp/max_i32.elf" ffffffff
+compile_entry max_i32 7,7
+run_case signed-max-equal "$tmp/max_i32.elf" 00000007
+
+compile_entry min_u32 0x80000000,0x7fffffff
+run_case unsigned-min-crosses-sign-bit "$tmp/min_u32.elf" 7fffffff
+compile_entry min_u32 0xffffffff,0x80000000
+run_case unsigned-min-high-values "$tmp/min_u32.elf" 80000000
+compile_entry max_u32 0x80000000,0x7fffffff
+run_case unsigned-max-crosses-sign-bit "$tmp/max_u32.elf" 80000000
+compile_entry max_u32 0xffffffff,0x80000000
+run_case unsigned-max-high-values "$tmp/max_u32.elf" ffffffff
+compile_entry max_u32 9,9
+run_case unsigned-max-equal "$tmp/max_u32.elf" 00000009
+
+compile_entry saturating_add_u32 0xfffffff0,0x30
+run_case saturating-add-overflow "$tmp/saturating_add_u32.elf" ffffffff
+compile_entry saturating_add_u32 0xfffffffe,1
+run_case saturating-add-to-max "$tmp/saturating_add_u32.elf" ffffffff
+compile_entry saturating_add_u32 0x12345678,0x100
+run_case saturating-add-no-overflow "$tmp/saturating_add_u32.elf" 12345778
+compile_entry saturating_add_u32 0x80000000,0x80000000
+run_case saturating-add-two-high-values "$tmp/saturating_add_u32.elf" ffffffff
+
 if [[ "${SPU_EMULATOR_HAS_SUMB:-0}" == "1" ]]; then
     compile_entry count_ones_u32 0
     run_case count-ones-zero "$tmp/count_ones_u32.elf" 00000000

@@ -40,6 +40,13 @@ the respective zero-count path, and their zero and boundary cases also pass in
 the emulator. Signed `i32::wrapping_abs` lowers defined wrapping semantics
 through a `rotmai` sign mask, XOR, and subtraction; emulator checks include
 `i32::MIN` and both signed boundaries.
+Signed and unsigned scalar `min`/`max` lower the host LLVM `smin`, `smax`,
+`umin`, and `umax` intrinsics to SPU `cgt`/`clgt` comparison masks and `selb`.
+The emulator checks signed ordering across zero, unsigned ordering across the
+sign bit, negative operands, and equal values.
+Unsigned `u32::saturating_add` lowers `llvm.uadd.sat.i32` to an SPU sum,
+unsigned overflow comparison, and all-ones mask. Emulator cases cover overflow,
+a non-overflowing result of `u32::MAX`, and ordinary addition.
 
 ## Milestone 2: scalar entry image
 

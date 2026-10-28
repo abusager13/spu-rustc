@@ -63,6 +63,11 @@ enum BinaryOp {
     AShr,
     RotateLeft,
     RotateRight,
+    SignedMin,
+    SignedMax,
+    UnsignedMin,
+    UnsignedMax,
+    UnsignedSaturatingAdd,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -422,6 +427,22 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
             rhs,
         });
     }
+    if let Some((op, lhs, rhs)) = parse_minmax(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Binary(op),
+            lhs,
+            rhs,
+        });
+    }
+    if let Some((lhs, rhs)) = parse_unsigned_saturating_add(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Binary(BinaryOp::UnsignedSaturatingAdd),
+            lhs,
+            rhs,
+        });
+    }
     let mut fields = expression.split_whitespace();
     let mnemonic = fields.next().unwrap_or_default();
     let operation = if mnemonic == "icmp" {
@@ -540,6 +561,85 @@ fn parse_funnel_shift(expression: &str) -> Result<Option<(BinaryOp, Operand, Ope
         return Err("only rotate forms with identical funnel-shift inputs are supported".into());
     }
     Ok(Some((op, arguments[0].clone(), arguments[2].clone())))
+}
+
+fn parse_minmax(expression: &str) -> Result<Option<(BinaryOp, Operand, Operand)>, String> {
+    let Some((intrinsic, op)) = [
+        ("@llvm.smin.i32", BinaryOp::SignedMin),
+        ("@llvm.smax.i32", BinaryOp::SignedMax),
+        ("@llvm.umin.i32", BinaryOp::UnsignedMin),
+        ("@llvm.umax.i32", BinaryOp::UnsignedMax),
+    ]
+    .into_iter()
+    .find(|(intrinsic, _)| expression.contains(intrinsic)) else {
+        return Ok(None);
+    };
+    let name_start = expression
+        .find(intrinsic)
+        .ok_or("LLVM min/max intrinsic name is missing")?;
+    let open = expression[name_start + intrinsic.len()..]
+        .find('(')
+        .map(|offset| name_start + intrinsic.len() + offset)
+        .ok_or("LLVM min/max argument list is missing")?;
+    let close = expression[open + 1..]
+        .find(')')
+        .map(|offset| open + 1 + offset)
+        .ok_or("LLVM min/max argument list is unterminated")?;
+    let arguments = expression[open + 1..close]
+        .split(',')
+        .map(|argument| {
+            let fields = argument.split_whitespace().collect::<Vec<_>>();
+            if !fields.contains(&"i32") {
+                return Err("LLVM min/max arguments must be i32".to_owned());
+            }
+            let value = fields
+                .last()
+                .ok_or_else(|| "LLVM min/max argument is missing".to_owned())?;
+            parse_operand(value)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if arguments.len() != 2 {
+        return Err(format!(
+            "LLVM min/max intrinsic requires two operands; found {}",
+            arguments.len()
+        ));
+    }
+    Ok(Some((op, arguments[0].clone(), arguments[1].clone())))
+}
+
+fn parse_unsigned_saturating_add(expression: &str) -> Result<Option<(Operand, Operand)>, String> {
+    let intrinsic = "@llvm.uadd.sat.i32";
+    let Some(name_start) = expression.find(intrinsic) else {
+        return Ok(None);
+    };
+    let open = expression[name_start + intrinsic.len()..]
+        .find('(')
+        .map(|offset| name_start + intrinsic.len() + offset)
+        .ok_or("LLVM saturating-add argument list is missing")?;
+    let close = expression[open + 1..]
+        .find(')')
+        .map(|offset| open + 1 + offset)
+        .ok_or("LLVM saturating-add argument list is unterminated")?;
+    let arguments = expression[open + 1..close]
+        .split(',')
+        .map(|argument| {
+            let fields = argument.split_whitespace().collect::<Vec<_>>();
+            if !fields.contains(&"i32") {
+                return Err("LLVM saturating-add arguments must be i32".to_owned());
+            }
+            let value = fields
+                .last()
+                .ok_or_else(|| "LLVM saturating-add argument is missing".to_owned())?;
+            parse_operand(value)
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if arguments.len() != 2 {
+        return Err(format!(
+            "LLVM saturating-add intrinsic requires two operands; found {}",
+            arguments.len()
+        ));
+    }
+    Ok(Some((arguments[0].clone(), arguments[1].clone())))
 }
 
 fn parse_ctlz(expression: &str) -> Result<Option<(UnaryOp, Operand)>, String> {
@@ -716,10 +816,14 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                 Operand::Constant(_),
             ) => false,
             (Operation::Binary(op), Operand::Value(_), Operand::Constant(value)) => {
-                !immediate_is_encodable(op, *value, false)
+                is_minmax(op)
+                    || op == BinaryOp::UnsignedSaturatingAdd
+                    || !immediate_is_encodable(op, *value, false)
             }
             (Operation::Binary(op), Operand::Constant(value), Operand::Value(_)) => {
-                !immediate_is_encodable(op, *value, true)
+                is_minmax(op)
+                    || op == BinaryOp::UnsignedSaturatingAdd
+                    || !immediate_is_encodable(op, *value, true)
             }
             (Operation::Compare(_), Operand::Value(_), Operand::Constant(_))
             | (Operation::Compare(_), Operand::Constant(_), Operand::Value(_)) => true,
@@ -795,6 +899,25 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             lhs_reg,
                             rhs_reg,
                             count_is_dead,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Binary(op) if is_minmax(op) => {
+                        operations.extend(lower_minmax(
+                            op,
+                            dst,
+                            lhs_reg,
+                            rhs_reg,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Binary(BinaryOp::UnsignedSaturatingAdd) => {
+                        operations.extend(lower_unsigned_saturating_add(
+                            dst,
+                            lhs_reg,
+                            rhs_reg,
                             &mut next_temp,
                             &mut free_temps,
                         )?);
@@ -879,6 +1002,27 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             &mut free_temps,
                         )?);
                     }
+                    Operation::Binary(op) if is_minmax(op) => {
+                        operations.extend(materialize_i32(dst, *constant));
+                        operations.extend(lower_minmax(
+                            op,
+                            dst,
+                            source,
+                            dst,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Binary(BinaryOp::UnsignedSaturatingAdd) => {
+                        operations.extend(materialize_i32(dst, *constant));
+                        operations.extend(lower_unsigned_saturating_add(
+                            dst,
+                            source,
+                            dst,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
                     Operation::Binary(op) => {
                         operations
                             .extend(lower_constant_binary(op, dst, source, *constant, false)?);
@@ -912,6 +1056,27 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                                 &mut free_temps,
                             )?);
                         }
+                    }
+                    Operation::Binary(op) if is_minmax(op) => {
+                        operations.extend(materialize_i32(dst, *constant));
+                        operations.extend(lower_minmax(
+                            op,
+                            dst,
+                            dst,
+                            source,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Binary(BinaryOp::UnsignedSaturatingAdd) => {
+                        operations.extend(materialize_i32(dst, *constant));
+                        operations.extend(lower_unsigned_saturating_add(
+                            dst,
+                            dst,
+                            source,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
                     }
                     Operation::Binary(op) if immediate_is_encodable(op, *constant, true) => {
                         operations.push(lower_immediate(op, dst, source, *constant, true)?);
@@ -980,6 +1145,30 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                     operations.extend(materialize_i32(
                         dst,
                         (*lhs as u32).rotate_right(*rhs as u32) as i32,
+                    ));
+                }
+                Operation::Binary(BinaryOp::SignedMin) => {
+                    operations.extend(materialize_i32(dst, (*lhs).min(*rhs)));
+                }
+                Operation::Binary(BinaryOp::SignedMax) => {
+                    operations.extend(materialize_i32(dst, (*lhs).max(*rhs)));
+                }
+                Operation::Binary(BinaryOp::UnsignedMin) => {
+                    operations.extend(materialize_i32(
+                        dst,
+                        ((*lhs as u32).min(*rhs as u32)) as i32,
+                    ));
+                }
+                Operation::Binary(BinaryOp::UnsignedMax) => {
+                    operations.extend(materialize_i32(
+                        dst,
+                        ((*lhs as u32).max(*rhs as u32)) as i32,
+                    ));
+                }
+                Operation::Binary(BinaryOp::UnsignedSaturatingAdd) => {
+                    operations.extend(materialize_i32(
+                        dst,
+                        ((*lhs as u32).saturating_add(*rhs as u32)) as i32,
                     ));
                 }
                 Operation::Binary(_) => {
@@ -1058,6 +1247,13 @@ fn lower_immediate(
         BinaryOp::RotateLeft | BinaryOp::RotateRight => {
             return Err("SPU rotate immediates use the dedicated lowering path".into())
         }
+        BinaryOp::SignedMin
+        | BinaryOp::SignedMax
+        | BinaryOp::UnsignedMin
+        | BinaryOp::UnsignedMax => return Err("SPU min/max use compare and select lowering".into()),
+        BinaryOp::UnsignedSaturatingAdd => {
+            return Err("SPU saturating add uses compare and mask lowering".into())
+        }
     };
     let immediate = match op {
         BinaryOp::LShr | BinaryOp::AShr => -immediate,
@@ -1070,6 +1266,12 @@ fn lower_immediate(
 
 fn immediate_value(op: BinaryOp, value: i32, constant_is_lhs: bool) -> Option<i32> {
     if matches!(op, BinaryOp::RotateLeft | BinaryOp::RotateRight) {
+        return None;
+    }
+    if is_minmax(op) {
+        return None;
+    }
+    if op == BinaryOp::UnsignedSaturatingAdd {
         return None;
     }
     if op == BinaryOp::Mul {
@@ -1131,10 +1333,73 @@ fn lower_binary_register(
         BinaryOp::RotateRight => {
             return Err("variable right rotations require a negated count register".into())
         }
+        BinaryOp::SignedMin
+        | BinaryOp::SignedMax
+        | BinaryOp::UnsignedMin
+        | BinaryOp::UnsignedMax => return Err("SPU min/max use compare and select lowering".into()),
+        BinaryOp::UnsignedSaturatingAdd => {
+            return Err("SPU saturating add uses compare and mask lowering".into())
+        }
         BinaryOp::LShr | BinaryOp::AShr => {
             return Err("variable right shifts require a negated count register".into())
         }
     })
+}
+
+fn is_minmax(op: BinaryOp) -> bool {
+    matches!(
+        op,
+        BinaryOp::SignedMin | BinaryOp::SignedMax | BinaryOp::UnsignedMin | BinaryOp::UnsignedMax
+    )
+}
+
+fn lower_minmax(
+    op: BinaryOp,
+    destination: usize,
+    lhs: usize,
+    rhs: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    let mask = allocate_scratch(next_temp, free_temps)
+        .map_err(|_| "SPU min/max needs one additional caller-saved SPU register")?;
+    let compare = match op {
+        BinaryOp::SignedMin | BinaryOp::SignedMax => "cgt",
+        BinaryOp::UnsignedMin | BinaryOp::UnsignedMax => "clgt",
+        _ => return Err("expected an SPU min/max operation".into()),
+    };
+    // Compare lhs > rhs. For min, select rhs when true; for max, select lhs.
+    let (select_a, select_b) = if matches!(op, BinaryOp::SignedMax | BinaryOp::UnsignedMax) {
+        (rhs, lhs)
+    } else {
+        (lhs, rhs)
+    };
+    let operations = vec![
+        format!("{compare} ${mask},${lhs},${rhs}"),
+        format!("selb ${destination},${select_a},${select_b},${mask}"),
+    ];
+    free_temps.insert(mask);
+    Ok(operations)
+}
+
+fn lower_unsigned_saturating_add(
+    destination: usize,
+    lhs: usize,
+    rhs: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    let sum = allocate_scratch(next_temp, free_temps)
+        .map_err(|_| "unsigned saturating add needs one additional caller-saved SPU register")?;
+    // A wrapped unsigned sum is smaller than either nonzero addend. `clgt`
+    // produces an all-ones mask on overflow, so OR saturates the result to MAX.
+    let operations = vec![
+        format!("a ${sum},${lhs},${rhs}"),
+        format!("clgt ${destination},${lhs},${sum}"),
+        format!("or ${destination},${sum},${destination}"),
+    ];
+    free_temps.insert(sum);
+    Ok(operations)
 }
 
 fn lower_multiply(
@@ -1435,6 +1700,18 @@ mod tests {
         )
     }
 
+    fn minmax_ir(intrinsic: &str, lhs: &str, rhs: &str) -> String {
+        format!(
+            "define noundef i32 @f(i32 noundef %a, i32 noundef %b) {{\nstart:\n  %result = tail call noundef i32 @llvm.{intrinsic}.i32(i32 {lhs}, i32 {rhs})\n  ret i32 %result\n}}\n"
+        )
+    }
+
+    fn saturating_add_ir(lhs: &str, rhs: &str) -> String {
+        format!(
+            "define noundef i32 @f(i32 noundef %a, i32 noundef %b) {{\nstart:\n  %result = tail call noundef i32 @llvm.uadd.sat.i32(i32 {lhs}, i32 {rhs})\n  ret i32 %result\n}}\n"
+        )
+    }
+
     fn one_param_ir(op: &str, operands: &str) -> String {
         format!(
             "define noundef i32 @f(i32 noundef %a) unnamed_addr {{\nstart:\n  %sum = {op} i32 {operands}\n  ret i32 %sum\n}}\n"
@@ -1707,6 +1984,75 @@ mod tests {
         assert!(parse_single_i32_binary_function(&wrapping_abs_ir("true"))
             .unwrap_err()
             .contains("defined-overflow"));
+    }
+
+    #[test]
+    fn lowers_signed_and_unsigned_minmax_with_compare_and_select() {
+        for (intrinsic, expected) in [
+            ("smin", "cgt $5,$3,$4\n  lnop\n  selb $3,$3,$4,$5"),
+            ("smax", "cgt $5,$3,$4\n  lnop\n  selb $3,$4,$3,$5"),
+            ("umin", "clgt $5,$3,$4\n  lnop\n  selb $3,$3,$4,$5"),
+            ("umax", "clgt $5,$3,$4\n  lnop\n  selb $3,$4,$3,$5"),
+        ] {
+            let function =
+                parse_single_i32_binary_function(&minmax_ir(intrinsic, "%a", "%b")).unwrap();
+            let assembly = lower_to_spu_assembly(&function).unwrap();
+            assert!(assembly.contains(expected), "{intrinsic}:\n{assembly}");
+        }
+    }
+
+    #[test]
+    fn materializes_minmax_constants_and_folds_constant_pairs() {
+        let right_constant =
+            parse_single_i32_binary_function(&minmax_ir("smin", "%a", "7")).unwrap();
+        let assembly = lower_to_spu_assembly(&right_constant).unwrap();
+        assert!(
+            assembly.contains("il $5,7\n  lnop\n  cgt $6,$3,$5"),
+            "{assembly}"
+        );
+        assert!(assembly.contains("selb $5,$3,$5,$6"), "{assembly}");
+
+        let left_constant =
+            parse_single_i32_binary_function(&minmax_ir("umax", "305419896", "%b")).unwrap();
+        let assembly = lower_to_spu_assembly(&left_constant).unwrap();
+        assert!(
+            assembly.contains("ilhu $5,4660\n  lnop\n  iohl $5,22136"),
+            "{assembly}"
+        );
+        assert!(assembly.contains("clgt $6,$5,$4"), "{assembly}");
+
+        let constants = "define i32 @f() {\n  %result = call i32 @llvm.smax.i32(i32 -4, i32 9)\n  ret i32 %result\n}\n";
+        let function = parse_single_i32_binary_function(&constants).unwrap();
+        assert!(lower_to_spu_assembly(&function)
+            .unwrap()
+            .contains("il $3,9\n  bi $0"));
+    }
+
+    #[test]
+    fn lowers_unsigned_saturating_add_and_handles_overflow() {
+        let function = parse_single_i32_binary_function(&saturating_add_ir("%a", "%b")).unwrap();
+        assert_eq!(
+            lower_to_spu_assembly(&function).unwrap(),
+            ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  a $5,$3,$4\n  lnop\n  clgt $3,$3,$5\n  lnop\n  or $3,$5,$3\n  bi $0\n.size f,.-f\n"
+        );
+
+        let constants = "define i32 @f() {\n  %result = call i32 @llvm.uadd.sat.i32(i32 4294967295, i32 1)\n  ret i32 %result\n}\n";
+        let function = parse_single_i32_binary_function(constants).unwrap();
+        assert!(lower_to_spu_assembly(&function)
+            .unwrap()
+            .contains("il $3,-1\n  bi $0"));
+
+        let constant_rhs = "define i32 @f(i32 noundef %a) {\n  %result = call i32 @llvm.uadd.sat.i32(i32 %a, i32 7)\n  ret i32 %result\n}\n";
+        let function = parse_single_i32_binary_function(constant_rhs).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(
+            assembly.contains("il $4,7\n  lnop\n  a $5,$3,$4"),
+            "{assembly}"
+        );
+        assert!(
+            assembly.contains("clgt $4,$3,$5\n  lnop\n  or $4,$5,$4"),
+            "{assembly}"
+        );
     }
 
     #[test]

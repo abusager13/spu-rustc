@@ -124,8 +124,10 @@ The current driver:
 3. Accepts one function with zero to 72 named `i32` parameters, a straight-line
    sequence of `add`, `sub`, wrapping `mul`, `and`, `or`, `xor`, `shl`, `lshr`,
    `ashr`, `rotate_left`, `rotate_right`, `leading_zeros`, `trailing_zeros`,
-   `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, or
-   integer comparisons. It returns a parameter, computed `i32`, Rust `bool`, or
+   `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, signed
+   and unsigned `min`/`max`, unsigned `u32::saturating_add`, or integer
+   comparisons. It returns a parameter,
+   computed `i32`, Rust `bool`, or
    32-bit literal.
    Add/subtract, logic, shift, and rotate
    immediates are used when the SPU encoding permits; multiply operands and
@@ -143,6 +145,12 @@ The current driver:
    followed by the corresponding defined-zero count intrinsic. `wrapping_abs`
    accepts only `llvm.abs.i32` with its poison flag false and uses `rotmai`,
    XOR, and subtraction to preserve the signed minimum value.
+   Signed and unsigned `min`/`max` accept `llvm.smin.i32`, `llvm.smax.i32`,
+   `llvm.umin.i32`, and `llvm.umax.i32`; they compare with `cgt` or `clgt`, then
+   select the winning input with `selb`.
+   Unsigned `u32::saturating_add` accepts `llvm.uadd.sat.i32`, adds into a
+   temporary, compares the wrapped sum with an addend using `clgt`, and ORs the
+   overflow mask into the returned value.
 4. Assigns parameters to C ABI registers `$3` through `$74`, uses caller-saved
    registers `$3` through `$79` for computed values, and reuses temporary
    registers after each value's last use. It expands 32-bit multiplication

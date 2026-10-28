@@ -34,6 +34,9 @@ rotate-right operations with variable or constant counts, `u32::leading_zeros`
 via SPU `clz`, `u32::trailing_zeros` via compare/negate/and/`clz`, and
 `u32::leading_ones`/`trailing_ones` via a complement and those count paths, and
 `u32::count_ones` via `cntb`/`sumb`/`xshw`, plus signed `i32::wrapping_abs`,
+signed and unsigned `min`/`max` via compare and select,
+unsigned `u32::saturating_add` via a native sum, carry comparison, and overflow
+mask,
 constants, identity functions, multi-operation code, ABI argument placement,
 liveness-based temporary reuse, and stop-only and scalar-entry ELFs. The scalar
 startup initializes the local-store stack pointer, supplies optional
