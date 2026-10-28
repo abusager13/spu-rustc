@@ -86,6 +86,8 @@ fn emits_big_endian_spu_objects_for_no_std_i32_operations() {
         ("trailing_zeros_u32", "ceqi\t$4,$3,0"),
         ("trailing_ones_u32", "ceqi\t$5,$4,0"),
         ("count_ones_u32", "cntb\t$3,$3"),
+        ("reverse_bits_u32", "roti\t$3,$3,16"),
+        ("swap_bytes_u32", "rotmi\t$3,$3,-8"),
         ("wrapping_abs_i32", "rotmai\t$4,$3,-31"),
         ("min_i32", "selb\t$3,$4,$3,$5"),
         ("max_i32", "selb\t$3,$3,$4,$5"),

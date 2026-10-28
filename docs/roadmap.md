@@ -55,6 +55,13 @@ Signed `i32::saturating_add` and `saturating_sub` lower `llvm.sadd.sat.i32` and
 `llvm.ssub.sat.i32` through sign-bit overflow masks and select the correct
 `i32::MIN` or `i32::MAX` limit. Emulator cases cover both overflow directions
 and ordinary boundary arithmetic.
+Rust `u32::reverse_bits` lowers `llvm.bitreverse.i32` through four masked
+word-swap stages and a 16-bit rotate. The object test checks the assembled
+instruction sequence, and emulator cases check zero, both endpoint bits, a
+mixed pattern, and all ones.
+Rust `u32::swap_bytes` lowers `llvm.bswap.i32` using a byte-pair mask, shifts,
+and a 16-bit rotate. The object test checks native assembly, and emulator cases
+cover the low byte, a mixed pattern, and all ones.
 Straight-line LLVM `select i1` with `i32` arms lowers to SPU `selb`. When an
 `icmp` result feeds a select, the compare mask stays all-ones/all-zero; a
 standalone returned Rust `bool` remains normalized to 0 or 1. This does not

@@ -137,8 +137,8 @@ The current driver:
    `leading_ones`, `trailing_ones`, `count_ones`, `i32::wrapping_abs`, signed
    and unsigned `min`/`max`, unsigned `u32::saturating_add` and
    `u32::saturating_sub`, signed `i32::saturating_add` and
-   `i32::saturating_sub`, scalar `select`, or
-   integer comparisons. It returns a parameter, computed `i32`, Rust `bool`, or
+   `i32::saturating_sub`, `u32::reverse_bits`, `u32::swap_bytes`, scalar
+   `select`, or integer comparisons. It returns a parameter, computed `i32`, Rust `bool`, or
    a 32-bit literal.
    Add/subtract, logic, shift, and rotate
    immediates are used when the SPU encoding permits; multiply operands and
@@ -168,6 +168,11 @@ The current driver:
    `llvm.sadd.sat.i32` and `llvm.ssub.sat.i32`; XOR/AND and `rotmai` detect
    overflow, then `selb` chooses `i32::MIN` or `i32::MAX`. These lowerings use
    temporary registers and have not been generalized to other widths.
+   `reverse_bits` accepts `llvm.bitreverse.i32` and swaps adjacent bits, then
+   2-bit groups, nibbles, and bytes using masks, shifts, and ORs before a final
+   16-bit rotate. This implementation is limited to `i32`.
+   `swap_bytes` accepts `llvm.bswap.i32` and exchanges adjacent bytes with a
+   `0x00ff00ff` mask, shifts, and a final 16-bit rotate.
    `select i1` accepts an i1 condition and i32 arms and lowers to `selb`;
    comparison masks used by a select remain all-ones or all-zero. This only
    accepts straight-line `select` instructions and does not lower `br` or `phi`.

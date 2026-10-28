@@ -220,6 +220,26 @@ in this repository.
    default plugin build additionally requires `gcc_jit_type_get_restrict`.
    The GCC 9.5 object smoke therefore remains a C API proof only, not a Rust
    codegen path.
+34. Added `u32::reverse_bits` lowering from `llvm.bitreverse.i32` using four
+   masked word-swap stages and a final 16-bit rotate. The object integration
+   test assembled the Rust example and checked its disassembly; a unit test
+   also checks that lowering preserves its input if it remains live. With the
+   SPU binutils available, `SPU_REQUIRE_E2E=1 cargo test --offline` passed all
+   58 unit tests and all three end-to-end tests. The pinned emulator script
+   passed 91 mailbox checks overall, including reverse-bits results of zero,
+   `0x80000000`, one, `0xe6a2c480`, and `0xffffffff` for zero, the low bit,
+   the high bit, `0x01234567`, and all ones. Each image reached `stop`.
+   Population-count execution remained skipped because this emulator leaves
+   `sumb` unimplemented.
+35. Added `u32::swap_bytes` lowering from `llvm.bswap.i32` using a
+   `0x00ff00ff` mask, two byte shifts, and a final 16-bit rotate. The object
+   integration test assembled the Rust example and checked the emitted
+   instruction; unit tests check constant folding and preserve a still-live
+   input. `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 62 unit tests and
+   all three end-to-end tests. The pinned emulator script passed 95 mailbox
+   checks overall, including byte swaps for zero, one, `0x12345678`, and all
+   ones; each image reached `stop`. Count-ones execution remained skipped
+   because the emulator leaves `sumb` unimplemented.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent

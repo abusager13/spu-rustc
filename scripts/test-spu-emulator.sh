@@ -199,6 +199,26 @@ run_case wrapping-abs-i32-min "$tmp/wrapping_abs_i32.elf" 80000000
 compile_entry wrapping_abs_i32 0x7fffffff
 run_case wrapping-abs-i32-max "$tmp/wrapping_abs_i32.elf" 7fffffff
 
+compile_entry reverse_bits_u32 0
+run_case reverse-bits-zero "$tmp/reverse_bits_u32.elf" 00000000
+compile_entry reverse_bits_u32 1
+run_case reverse-bits-low-bit "$tmp/reverse_bits_u32.elf" 80000000
+compile_entry reverse_bits_u32 0x80000000
+run_case reverse-bits-high-bit "$tmp/reverse_bits_u32.elf" 00000001
+compile_entry reverse_bits_u32 0x01234567
+run_case reverse-bits-mixed-pattern "$tmp/reverse_bits_u32.elf" e6a2c480
+compile_entry reverse_bits_u32 0xffffffff
+run_case reverse-bits-all-ones "$tmp/reverse_bits_u32.elf" ffffffff
+
+compile_entry swap_bytes_u32 0
+run_case swap-bytes-zero "$tmp/swap_bytes_u32.elf" 00000000
+compile_entry swap_bytes_u32 1
+run_case swap-bytes-low-byte "$tmp/swap_bytes_u32.elf" 01000000
+compile_entry swap_bytes_u32 0x12345678
+run_case swap-bytes-mixed-pattern "$tmp/swap_bytes_u32.elf" 78563412
+compile_entry swap_bytes_u32 0xffffffff
+run_case swap-bytes-all-ones "$tmp/swap_bytes_u32.elf" ffffffff
+
 compile_entry min_i32 0x80000000,0x7fffffff
 run_case signed-min-crosses-zero "$tmp/min_i32.elf" 80000000
 compile_entry min_i32 0xffffffff,0x80000000

@@ -16,8 +16,9 @@ line `i32` add, subtract, wrapping multiply, bitwise, shift, rotate,
 `leading_zeros`, `trailing_zeros`, `leading_ones`, `trailing_ones`, and
 `count_ones` operations, scalar conditional `select`, unsigned
 `u32::saturating_add` and `u32::saturating_sub`, signed and unsigned `min`/`max`,
-signed `i32::saturating_add` and `i32::saturating_sub`, and signed
-`i32::wrapping_abs`. Rust `wrapping_shl` and
+signed `i32::saturating_add` and `i32::saturating_sub`, signed
+`i32::wrapping_abs`, `u32::reverse_bits`, and `u32::swap_bytes`. Rust
+`wrapping_shl` and
 `wrapping_shr` mask the shift count to five bits; signed right shifts use
 arithmetic semantics.
 `rotate_left` and `rotate_right` use the SPU rotate instructions and wrap
@@ -31,6 +32,10 @@ using the leading- or trailing-zero sequence. `count_ones` uses SPU `cntb`,
 it preserves `i32::MIN` with wrapping semantics.
 Signed and unsigned `min`/`max` use the corresponding SPU compare and `selb`
 instructions to select a result.
+`reverse_bits` lowers LLVM's `bitreverse.i32` through four masked word swaps
+and a 16-bit rotate.
+`swap_bytes` lowers `bswap.i32` through a byte mask, shifts, and a 16-bit
+rotate.
 Unsigned `saturating_add` detects a wrapped result with `clgt` and applies an
 overflow mask with `or` to return `u32::MAX` on overflow. Unsigned
 `saturating_sub` compares the operands and uses an inverted mask to clear an
@@ -42,10 +47,10 @@ to `0` or `1` in the SPU result register. Functions may also return a
 parameter, an operation result, or any 32-bit literal. Immediate forms are
 used where supported and larger constants are materialized in a register. The
 examples include scalar operations, variable and constant multiplication and
-rotations, leading/trailing zero and one counts, population counts, wrapping
-absolute value, signed and unsigned min/max, signed and unsigned saturating
-addition and subtraction, conditional selection, three- and eight-argument sums,
-shifts, and signed and unsigned
+rotations, leading/trailing zero and one counts, population counts, bit
+reversal, byte swapping, wrapping absolute value, signed and unsigned min/max,
+signed and unsigned saturating addition and subtraction, conditional
+selection, three- and eight-argument sums, shifts, and signed and unsigned
 comparisons.
 A Rust conditional expression is supported only when host `rustc` lowers it to
 straight-line LLVM `select`; general branches, loops, and `phi` nodes remain
@@ -110,17 +115,19 @@ instructions. `docs/validation.md` records the tested versions and evidence.
 
 The optional emulator check uses the standalone `anergistic` SPU emulator. It
 compiles and runs a Rust entry plus arithmetic, bitwise, shift, rotate,
-bit-count, wrapping-absolute, signed and unsigned min/max, unsigned saturating
-addition, comparison, and conditional-selection functions. It checks variable
-rotate counts 0, 1,
-31, 32, 33, and
-`0xffffffff`, constant rotations, and leading-zero results for zero and
+bit-count, bit-reversal, byte-swap, wrapping-absolute, signed and unsigned
+min/max, signed and unsigned saturating addition and subtraction, comparison,
+and conditional-selection functions. It checks variable rotate counts 0, 1,
+31, 32, 33, and `0xffffffff`, constant rotations, and leading-zero results
+for zero and
 representative bit patterns. It checks trailing-zero results for zero, low and
-high bits, and mixed patterns. The one-count checks include zero and all-ones
+high bits, and mixed patterns. Bit-reversal checks include both endpoint bits,
+a mixed pattern, and all ones. Byte-swap checks include a low byte, a mixed
+pattern, and all ones. The one-count checks include zero and all-ones
 inputs. The wrapping-absolute checks include positive, negative, minimum, and
 maximum `i32` values. Min/max checks cover signed and unsigned order across the
-sign bit and equal operands. Saturating-add checks cover overflow, a result of
-`u32::MAX` without overflow, and ordinary addition. Startup loads fixed ABI
+sign bit and equal operands. Saturating arithmetic checks cover overflow,
+underflow, boundary results, and ordinary operations. Startup loads fixed ABI
 argument words, including a full-width constant; each
 result must be written to the outbound mailbox before the emulator reaches
 `stop`.

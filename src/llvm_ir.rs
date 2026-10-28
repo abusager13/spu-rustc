@@ -49,6 +49,8 @@ enum UnaryOp {
     CountLeadingZeros,
     CountTrailingZeros,
     CountOnes,
+    BitReverse,
+    ByteSwap,
     WrappingAbs,
 }
 
@@ -440,6 +442,24 @@ fn parse_instruction(result: &str, expression: &str) -> Result<Instruction, Stri
         return Ok(Instruction {
             result: result.to_owned(),
             op: Operation::Unary(UnaryOp::CountOnes),
+            lhs: operand,
+            rhs: Operand::Constant(0),
+            condition: None,
+        });
+    }
+    if let Some(operand) = parse_bitreverse(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Unary(UnaryOp::BitReverse),
+            lhs: operand,
+            rhs: Operand::Constant(0),
+            condition: None,
+        });
+    }
+    if let Some(operand) = parse_bswap(expression)? {
+        return Ok(Instruction {
+            result: result.to_owned(),
+            op: Operation::Unary(UnaryOp::ByteSwap),
             lhs: operand,
             rhs: Operand::Constant(0),
             condition: None,
@@ -842,6 +862,56 @@ fn parse_ctpop(expression: &str) -> Result<Option<Operand>, String> {
     Ok(Some(parse_operand(value)?))
 }
 
+fn parse_bitreverse(expression: &str) -> Result<Option<Operand>, String> {
+    let intrinsic = "@llvm.bitreverse.i32";
+    let Some(name_start) = expression.find(intrinsic) else {
+        return Ok(None);
+    };
+    let open = expression[name_start + intrinsic.len()..]
+        .find('(')
+        .map(|offset| name_start + intrinsic.len() + offset)
+        .ok_or("LLVM bitreverse argument list is missing")?;
+    let close = expression[open + 1..]
+        .find(')')
+        .map(|offset| open + 1 + offset)
+        .ok_or("LLVM bitreverse argument list is unterminated")?;
+    let arguments = expression[open + 1..close].split(',').collect::<Vec<_>>();
+    if arguments.len() != 1 {
+        return Err("LLVM bitreverse requires exactly one argument".into());
+    }
+    let fields = arguments[0].split_whitespace().collect::<Vec<_>>();
+    if fields.first() != Some(&"i32") {
+        return Err("LLVM bitreverse requires an i32 value".into());
+    }
+    let value = fields.last().ok_or("LLVM bitreverse argument is missing")?;
+    Ok(Some(parse_operand(value)?))
+}
+
+fn parse_bswap(expression: &str) -> Result<Option<Operand>, String> {
+    let intrinsic = "@llvm.bswap.i32";
+    let Some(name_start) = expression.find(intrinsic) else {
+        return Ok(None);
+    };
+    let open = expression[name_start + intrinsic.len()..]
+        .find('(')
+        .map(|offset| name_start + intrinsic.len() + offset)
+        .ok_or("LLVM bswap argument list is missing")?;
+    let close = expression[open + 1..]
+        .find(')')
+        .map(|offset| open + 1 + offset)
+        .ok_or("LLVM bswap argument list is unterminated")?;
+    let arguments = expression[open + 1..close].split(',').collect::<Vec<_>>();
+    if arguments.len() != 1 {
+        return Err("LLVM bswap requires exactly one argument".into());
+    }
+    let fields = arguments[0].split_whitespace().collect::<Vec<_>>();
+    if fields.first() != Some(&"i32") {
+        return Err("LLVM bswap requires an i32 value".into());
+    }
+    let value = fields.last().ok_or("LLVM bswap argument is missing")?;
+    Ok(Some(parse_operand(value)?))
+}
+
 fn parse_wrapping_abs(expression: &str) -> Result<Option<Operand>, String> {
     let intrinsic = "@llvm.abs.i32";
     let Some(name_start) = expression.find(intrinsic) else {
@@ -980,6 +1050,22 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             format!("xshw ${dst},${dst}"),
                         ]);
                     }
+                    Operation::Unary(UnaryOp::BitReverse) => {
+                        operations.extend(lower_bit_reverse(
+                            dst,
+                            lhs_reg,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Unary(UnaryOp::ByteSwap) => {
+                        operations.extend(lower_byte_swap(
+                            dst,
+                            lhs_reg,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
                     Operation::Unary(UnaryOp::WrappingAbs) => {
                         operations.extend(lower_wrapping_abs(
                             dst,
@@ -1099,6 +1185,22 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                             format!("sumb ${dst},${dst},${dst}"),
                             format!("xshw ${dst},${dst}"),
                         ]);
+                    }
+                    Operation::Unary(UnaryOp::BitReverse) => {
+                        operations.extend(lower_bit_reverse(
+                            dst,
+                            source,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
+                    }
+                    Operation::Unary(UnaryOp::ByteSwap) => {
+                        operations.extend(lower_byte_swap(
+                            dst,
+                            source,
+                            &mut next_temp,
+                            &mut free_temps,
+                        )?);
                     }
                     Operation::Unary(UnaryOp::WrappingAbs) => {
                         operations.extend(lower_wrapping_abs(
@@ -1298,6 +1400,12 @@ pub fn lower_to_spu_assembly(function: &Function) -> Result<String, String> {
                 }
                 Operation::Unary(UnaryOp::CountOnes) => {
                     operations.extend(materialize_i32(dst, (*lhs as u32).count_ones() as i32));
+                }
+                Operation::Unary(UnaryOp::BitReverse) => {
+                    operations.extend(materialize_i32(dst, (*lhs as u32).reverse_bits() as i32));
+                }
+                Operation::Unary(UnaryOp::ByteSwap) => {
+                    operations.extend(materialize_i32(dst, (*lhs as u32).swap_bytes() as i32));
                 }
                 Operation::Unary(UnaryOp::WrappingAbs) => {
                     operations.extend(materialize_i32(dst, lhs.wrapping_abs()));
@@ -1916,6 +2024,74 @@ fn lower_trailing_zeros(
     ];
     free_temps.insert(zero_mask);
     free_temps.insert(negated);
+    Ok(operations)
+}
+
+fn lower_bit_reverse(
+    destination: usize,
+    source: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    let error = "bitreverse needs two additional caller-saved SPU registers";
+    let mask = allocate_scratch(next_temp, free_temps).map_err(|_| error)?;
+    let shifted = match allocate_scratch(next_temp, free_temps) {
+        Ok(register) => register,
+        Err(_) => {
+            free_temps.insert(mask);
+            return Err(error.into());
+        }
+    };
+
+    let mut operations = vec![format!("or ${destination},${source},${source}")];
+    for (shift, bits) in [
+        (1, 0x5555_5555_u32),
+        (2, 0x3333_3333_u32),
+        (4, 0x0f0f_0f0f_u32),
+        (8, 0x00ff_00ff_u32),
+    ] {
+        operations.extend(materialize_i32(mask, bits as i32));
+        operations.extend([
+            format!("rotmi ${shifted},${destination},-{shift}"),
+            format!("and ${shifted},${shifted},${mask}"),
+            format!("and ${destination},${destination},${mask}"),
+            format!("shli ${destination},${destination},{shift}"),
+            format!("or ${destination},${destination},${shifted}"),
+        ]);
+    }
+    operations.push(format!("roti ${destination},${destination},16"));
+    free_temps.insert(mask);
+    free_temps.insert(shifted);
+    Ok(operations)
+}
+
+fn lower_byte_swap(
+    destination: usize,
+    source: usize,
+    next_temp: &mut usize,
+    free_temps: &mut BTreeSet<usize>,
+) -> Result<Vec<String>, String> {
+    let error = "bswap needs two additional caller-saved SPU registers";
+    let mask = allocate_scratch(next_temp, free_temps).map_err(|_| error)?;
+    let left_bytes = match allocate_scratch(next_temp, free_temps) {
+        Ok(register) => register,
+        Err(_) => {
+            free_temps.insert(mask);
+            return Err(error.into());
+        }
+    };
+
+    let mut operations = materialize_i32(mask, 0x00ff_00ff);
+    operations.extend([
+        format!("and ${left_bytes},${source},${mask}"),
+        format!("shli ${left_bytes},${left_bytes},8"),
+        format!("rotmi ${destination},${source},-8"),
+        format!("and ${destination},${destination},${mask}"),
+        format!("or ${destination},${destination},${left_bytes}"),
+        format!("roti ${destination},${destination},16"),
+    ]);
+    free_temps.insert(mask);
+    free_temps.insert(left_bytes);
     Ok(operations)
 }
 
@@ -2581,6 +2757,99 @@ mod tests {
             lower_to_spu_assembly(&function).unwrap(),
             ".text\n.p2align 3\n.globl f\n.type f,@function\nf:\n  cntb $3,$3\n  lnop\n  sumb $3,$3,$3\n  lnop\n  xshw $3,$3\n  bi $0\n.size f,.-f\n"
         );
+    }
+
+    #[test]
+    fn lowers_rust_reverse_bits_to_masked_word_swaps() {
+        let module = "define i32 @f(i32 %a) {\n  %reversed = call i32 @llvm.bitreverse.i32(i32 %a)\n  ret i32 %reversed\n}\n";
+        let function = parse_single_i32_binary_function(module).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        for instruction in [
+            "or $3,$3,$3",
+            "ilhu $4,21845",
+            "iohl $4,21845",
+            "rotmi $5,$3,-1",
+            "and $5,$5,$4",
+            "shli $3,$3,1",
+            "ilhu $4,13107",
+            "ilhu $4,3855",
+            "ilhu $4,255",
+            "roti $3,$3,16",
+        ] {
+            assert!(
+                assembly.contains(instruction),
+                "missing {instruction}:\n{assembly}"
+            );
+        }
+        assert_eq!(assembly.matches("rotmi ").count(), 4, "{assembly}");
+        assert_eq!(assembly.matches("shli ").count(), 4, "{assembly}");
+    }
+
+    #[test]
+    fn bitreverse_preserves_a_source_value_that_is_still_live() {
+        let module = "define i32 @f(i32 %a) {\n  %reversed = call i32 @llvm.bitreverse.i32(i32 %a)\n  %result = xor i32 %reversed, %a\n  ret i32 %result\n}\n";
+        let function = parse_single_i32_binary_function(module).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(assembly.contains("or $4,$3,$3"), "{assembly}");
+        assert!(assembly.contains("xor $3,$3,$4"), "{assembly}");
+    }
+
+    #[test]
+    fn folds_constant_reverse_bits() {
+        let module = "define i32 @f() {\n  %reversed = call i32 @llvm.bitreverse.i32(i32 1)\n  ret i32 %reversed\n}\n";
+        let function = parse_single_i32_binary_function(module).unwrap();
+        assert!(lower_to_spu_assembly(&function)
+            .unwrap()
+            .contains("ilhu $3,-32768\n  lnop\n  iohl $3,0\n  bi $0"));
+    }
+
+    #[test]
+    fn rejects_bitreverse_with_a_non_i32_argument() {
+        let module = "define i32 @f() {\n  %reversed = call i32 @llvm.bitreverse.i32(i64 1)\n  ret i32 %reversed\n}\n";
+        assert!(parse_single_i32_binary_function(module)
+            .unwrap_err()
+            .contains("requires an i32 value"));
+    }
+
+    #[test]
+    fn lowers_rust_swap_bytes_to_masked_byte_swaps() {
+        let module = "define i32 @f(i32 %a) {\n  %swapped = call i32 @llvm.bswap.i32(i32 %a)\n  ret i32 %swapped\n}\n";
+        let function = parse_single_i32_binary_function(module).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        for instruction in [
+            "ilhu $4,255",
+            "iohl $4,255",
+            "and $5,$3,$4",
+            "shli $5,$5,8",
+            "rotmi $3,$3,-8",
+            "and $3,$3,$4",
+            "or $3,$3,$5",
+            "roti $3,$3,16",
+        ] {
+            assert!(
+                assembly.contains(instruction),
+                "missing {instruction}:\n{assembly}"
+            );
+        }
+    }
+
+    #[test]
+    fn byte_swap_preserves_a_source_value_that_is_still_live() {
+        let module = "define i32 @f(i32 %a) {\n  %swapped = call i32 @llvm.bswap.i32(i32 %a)\n  %result = xor i32 %swapped, %a\n  ret i32 %result\n}\n";
+        let function = parse_single_i32_binary_function(module).unwrap();
+        let assembly = lower_to_spu_assembly(&function).unwrap();
+        assert!(assembly.contains("and $6,$3,$5"), "{assembly}");
+        assert!(assembly.contains("rotmi $4,$3,-8"), "{assembly}");
+        assert!(assembly.contains("xor $3,$3,$4"), "{assembly}");
+    }
+
+    #[test]
+    fn folds_constant_byte_swap() {
+        let module = "define i32 @f() {\n  %swapped = call i32 @llvm.bswap.i32(i32 1)\n  ret i32 %swapped\n}\n";
+        let function = parse_single_i32_binary_function(module).unwrap();
+        assert!(lower_to_spu_assembly(&function)
+            .unwrap()
+            .contains("ilhu $3,256\n  lnop\n  iohl $3,0\n  bi $0"));
     }
 
     #[test]
