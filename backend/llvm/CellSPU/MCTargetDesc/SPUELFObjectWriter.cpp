@@ -31,8 +31,10 @@ public:
       return SPU::R_SPU_ADDR16;
     case SPU::fixup_spu_rel16:
       return SPU::R_SPU_REL16;
+    case SPU::fixup_spu_addr18:
+      return SPU::R_SPU_ADDR18;
     case FK_Data_4:
-      return IsPCRel ? 13 /* R_SPU_REL32 */ : SPU::R_SPU_ADDR32;
+      return IsPCRel ? SPU::R_SPU_REL32 : SPU::R_SPU_ADDR32;
     default:
       llvm_unreachable("unsupported CellSPU ELF relocation");
     }

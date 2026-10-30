@@ -31,6 +31,7 @@ public:
                                        FirstTargetFixupKind] = {
         {"fixup_spu_addr16", 7, 16, 0},
         {"fixup_spu_rel16", 7, 16, 0},
+        {"fixup_spu_addr18", 7, 18, 0},
     };
     if (Kind < FirstTargetFixupKind)
       return MCAsmBackend::getFixupKindInfo(Kind);
@@ -49,6 +50,7 @@ public:
 
     if (Fixup.getKind() != SPU::fixup_spu_addr16 &&
         Fixup.getKind() != SPU::fixup_spu_rel16 &&
+        Fixup.getKind() != SPU::fixup_spu_addr18 &&
         Fixup.getKind() != FK_Data_4)
       report_fatal_error("unsupported CellSPU fixup kind");
 
@@ -57,6 +59,17 @@ public:
     uint8_t *Location = Data;
     if (Fixup.getKind() == FK_Data_4) {
       support::endian::write32be(Location, static_cast<uint32_t>(Value));
+      return;
+    }
+
+    if (Fixup.getKind() == SPU::fixup_spu_addr18) {
+      if (Value > 0x3ffff)
+        getContext().reportError(Fixup.getLoc(),
+                                 "CellSPU address does not fit in 18 bits");
+      uint32_t Word = support::endian::read32be(Location);
+      Word = (Word & ~0x01ffff80U) |
+             ((static_cast<uint32_t>(Value) & 0x3ffffU) << 7);
+      support::endian::write32be(Location, Word);
       return;
     }
 

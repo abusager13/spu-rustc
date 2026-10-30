@@ -757,3 +757,12 @@ physical hardware.
   including the `CDD` channel mask. The emulator passed all 115 mailbox words
   and reached `stop`. This covers selected 64-bit memory cases and one C ABI
   signature; it does not establish general memory or ABI support.
+- Added CellSPU `R_SPU_ADDR18` support to LLVM's MC emitter and object writer for
+  relocatable `ila symbol` instructions. A Rust static-pointer fixture also
+  exercises the existing `R_SPU_ADDR32` data relocation. The smoke test checks
+  both relocation types, links with GNU `spu-ld`, follows the pointer with
+  volatile byte reads, and verifies `0x5a17c0de` in the emulator. The direct
+  object and GNU-assembled disassemblies match; the complete LLVM backend smoke
+  suite passed all 116 mailbox words. This does not implement the high/low
+  symbol relocations needed by the large-memory address sequence, nor does it
+  validate the complete SPU relocation set.

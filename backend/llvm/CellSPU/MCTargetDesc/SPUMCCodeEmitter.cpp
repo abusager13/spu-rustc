@@ -239,8 +239,12 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RI10(0x3ec00000, 1, 2, 0, 7, 0);
     if (Name == "CDD" || Name == "CDDf64")
       return RI10(0x3ee00000, 1, 2, 0, 7, 0);
-    if (Name.starts_with("ILA"))
-      return 0x42000000 | (immediate(MI, 1, 18) << 7) | reg(MI, 0);
+    if (Name.starts_with("ILA")) {
+      uint32_t Address = immediateOrFixup(MI, 1, 18,
+                                          SPU::fixup_spu_addr18, false,
+                                          Fixups);
+      return 0x42000000 | (Address << 7) | reg(MI, 0);
+    }
     if (Name == "IOHLf32" || Name == "IOHLr32" ||
         Name == "IOHLv2i64" || Name == "IOHLv4i32")
       return 0x60800000 | (immediate(MI, 2, 16) << 7) | reg(MI, 0);

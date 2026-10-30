@@ -41,7 +41,7 @@ memory operations:
    the SPU C ABI; GNU `spu-ld` links the objects into an executable. GNU
    `spu-as` assembles the small entry wrapper.
 3. The pinned `anergistic`
-   emulator checks all 115 result words and reaches `stop`. In addition
+   emulator checks all 116 result words and reaches `stop`. In addition
    to signed and unsigned `i32` and `i16` branch cases, one mailbox word packs
    twenty `i64` equality, inequality, signed, and unsigned comparison results.
    Signed and unsigned `i64` cases include opposite high/low-word ordering to
@@ -82,6 +82,9 @@ memory operations:
    boundary; both halves and the bytes around the access are checked. A GCC
    caller passes two `u64` arguments to a Rust function and verifies the
    64-bit return value, including the ABI path for the high and low words.
+   A Rust static-pointer fixture emits `R_SPU_ADDR18` to locate the pointer and
+   `R_SPU_ADDR32` for its initialized target address. Volatile byte reads
+   follow the pointer, reassemble `0x5a17c0de`, and pass in the emulator.
 
 In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
@@ -171,8 +174,13 @@ general merge/phi cases, and the rest of the ABI remain unvalidated here.
 LLVM now has an experimental MC code emitter, assembler backend, and ELF object
 writer for the instruction and relocation forms exercised by the smoke check.
 `llc -filetype=obj` directly emits the tested CellSPU objects, including
-`R_SPU_ADDR16` and `R_SPU_REL16` relocations. This does not
+`R_SPU_ADDR16`, `R_SPU_ADDR18`, `R_SPU_ADDR32`, and `R_SPU_REL16` relocations.
+The object writer also maps `R_SPU_REL32`, but no LLVM-generated fixture
+currently exercises it. This does not
 implement or validate the full SPU instruction encoder or relocation set.
+High/low symbol relocations used by the large-memory address sequence have not
+been implemented in the MC emitter. Static data access is covered by the one
+listed small-memory pointer case, not by arbitrary global addressing.
 Branch-hint `HBRA` instructions currently occupy their instruction slot as an
 SPU no-op, so branch prediction hints are dropped. Unsupported instruction
 forms can still fail object emission. The tested variable shifts explicitly

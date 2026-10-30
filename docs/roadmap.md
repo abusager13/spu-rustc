@@ -159,7 +159,7 @@ execution gate is passed.
    before the custom `llc` compiles it. Machine verification passes. LLVM
    directly emits the tested ELF objects, and GNU SPU binutils link an
    ELF32 big-endian `EM_SPU` executable. The pinned emulator returns
-   115 expected mailbox words, including wrapping `u32` multiplication,
+   116 expected mailbox words, including wrapping `u32` multiplication,
    `swap_bytes`, all four zero/one count methods, `count_ones`, both rotate directions, and
    immediate and explicitly
    masked variable left, logical-right, and arithmetic-right `i32` shifts;
@@ -171,12 +171,15 @@ execution gate is passed.
    halfword loads; a byte store; packed halfword and doubleword load/stores
    crossing a 16-byte boundary; aligned `u64` memory accesses; and a
    GCC-to-Rust `u64` addition call checking two 64-bit arguments and the
-   64-bit return. A 73rd
+   64-bit return; and a Rust static pointer read through `R_SPU_ADDR18` and
+   `R_SPU_ADDR32` relocations. A 73rd
    `u32` argument passes through GCC-to-Rust,
    Rust forwarding, and a Rust-generated call with constant arguments.
    This validates a narrow Rust-source-to-LLVM path, not a maintained
    `rustc --target=spu` route. LLVM directly emits ELF objects for the tested
-   subset; the MC encoder and relocation support remain incomplete. See
+   subset; the MC encoder and relocation support remain incomplete. The smoke
+   test now checks direct static-pointer addressing plus initialized-pointer
+   relocation. See
    `backend/llvm/README.md` for the reproduction command and exact limits.
 
    A direct-rustc integration proof now complements this harness: a custom

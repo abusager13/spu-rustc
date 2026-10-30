@@ -452,6 +452,26 @@ pub extern "C" fn rotate_right(value: u32, count: u32) -> u32 {
 pub extern "C" fn swap_bytes(value: u32) -> u32 {
     value.swap_bytes()
 }
+
+#[unsafe(no_mangle)]
+pub static SPU_RELOC_TARGET: [u8; 4] = [0x5a, 0x17, 0xc0, 0xde];
+
+#[unsafe(no_mangle)]
+pub static SPU_RELOC_POINTER: &[u8; 4] = &SPU_RELOC_TARGET;
+
+#[unsafe(no_mangle)]
+pub extern "C" fn read_spu_reloc_pointer() -> u32 {
+    let pointer = unsafe {
+        core::ptr::read_volatile(core::ptr::addr_of!(SPU_RELOC_POINTER))
+    };
+    let bytes = pointer.as_ptr();
+    unsafe {
+        ((core::ptr::read_volatile(bytes) as u32) << 24)
+            | ((core::ptr::read_volatile(bytes.add(1)) as u32) << 16)
+            | ((core::ptr::read_volatile(bytes.add(2)) as u32) << 8)
+            | (core::ptr::read_volatile(bytes.add(3)) as u32)
+    }
+}
 RUST
 
 "$rustc" --crate-type=lib --emit=llvm-ir -C panic=abort -C opt-level=1 \
@@ -1184,6 +1204,8 @@ _start:
   wrch $ch28, $3
   brsl $lr, gcc_add_u64_abi_low
   wrch $ch28, $3
+  brsl $lr, read_spu_reloc_pointer
+  wrch $ch28, $3
   stop 0
 .data
 .p2align 4
@@ -1266,6 +1288,19 @@ scalar_relocations=$("$spu_readelf" -r "$tmp/scalar.o")
 if ! grep -Fq 'R_SPU_ADDR16' <<<"$scalar_relocations"; then
     printf '%s\n' "$scalar_relocations" >&2
     echo "LLVM-generated scalar object is missing its constant-pool address relocations" >&2
+    exit 1
+fi
+dynamic_shift_relocations=$("$spu_readelf" -r "$tmp/dynamic_shift.o")
+for relocation in R_SPU_ADDR18 R_SPU_ADDR32; do
+    if ! grep -Fq "$relocation" <<<"$dynamic_shift_relocations"; then
+        printf '%s\n' "$dynamic_shift_relocations" >&2
+        echo "LLVM-generated Rust static-pointer object is missing $relocation" >&2
+        exit 1
+    fi
+done
+if ! grep -Fq 'SPU_RELOC_POINTER' <<<"$dynamic_shift_relocations"; then
+    printf '%s\n' "$dynamic_shift_relocations" >&2
+    echo "LLVM-generated Rust static-pointer object is missing its pointer-address relocation" >&2
     exit 1
 fi
 
@@ -1377,10 +1412,11 @@ expected+=000037680012abfe13cdef240000cdef
 expected+=008055aaf00f13cddca118efa1b2c3d4e5f60718
 expected+=f60718ef249abcdee51188f01122334455667788
 expected+=23456789cdf01123
-if [[ "$byte_count" != 460 || "$actual" != "$expected" ]]; then
+expected+=5a17c0de
+if [[ "$byte_count" != 464 || "$actual" != "$expected" ]]; then
     cat "$tmp/emulator.log" >&2
     echo "expected mailbox words $expected; got ${actual:-<empty>} ($byte_count bytes)" >&2
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic, 64-bit comparisons, memory, and C ABI, narrow memory accesses, byte-swap, shifts, rotates, bit-count, branch, loop, call, stack-argument ABI, and pointer-memory subset: direct LLVM ELF32 EM_SPU objects; emulator returned one hundred fifteen expected words and reached stop\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic, relocatable static pointers, 64-bit comparisons, memory, and C ABI, narrow memory accesses, byte-swap, shifts, rotates, bit-count, branch, loop, call, stack-argument ABI, and pointer-memory subset: direct LLVM ELF32 EM_SPU objects; emulator returned one hundred sixteen expected words and reached stop\n'
