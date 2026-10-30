@@ -1233,6 +1233,9 @@ ASM
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
     -verify-machineinstrs -filetype=obj "$tmp/dynamic_shift-spu.ll" \
     -o "$tmp/dynamic_shift.o"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -mattr=+large_mem -O1 \
+    -verify-machineinstrs -filetype=obj "$tmp/dynamic_shift-spu.ll" \
+    -o "$tmp/dynamic_shift_large.o"
 
 # Build the same instruction streams through LLVM's text printer and GNU's
 # assembler. Compare disassembly to cross-check the direct MC encodings; HBRA
@@ -1253,6 +1256,11 @@ ASM
     -verify-machineinstrs -filetype=asm "$tmp/dynamic_shift-spu.ll" \
     -o "$tmp/dynamic_shift.s"
 "$spu_as" -o "$tmp/dynamic_shift-asm.o" "$tmp/dynamic_shift.s"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -mattr=+large_mem -O1 \
+    -verify-machineinstrs -filetype=asm "$tmp/dynamic_shift-spu.ll" \
+    -o "$tmp/dynamic_shift_large.s"
+"$spu_as" -o "$tmp/dynamic_shift_large-asm.o" \
+    "$tmp/dynamic_shift_large.s"
 
 compare_direct_and_gnu_encoding() {
     local name=$1
@@ -1274,6 +1282,7 @@ compare_direct_and_gnu_encoding scalar
 compare_direct_and_gnu_encoding optimized_loop
 compare_direct_and_gnu_encoding stack_args
 compare_direct_and_gnu_encoding dynamic_shift
+compare_direct_and_gnu_encoding dynamic_shift_large
 
 stack_args_disassembly=$("$spu_objdump" -dr "$tmp/stack_args.o")
 if ! grep -Eq 'lqd[[:space:]]+\$[0-9]+,160\(\$1\)' \
@@ -1303,6 +1312,14 @@ if ! grep -Fq 'SPU_RELOC_POINTER' <<<"$dynamic_shift_relocations"; then
     echo "LLVM-generated Rust static-pointer object is missing its pointer-address relocation" >&2
     exit 1
 fi
+large_mem_relocations=$("$spu_readelf" -r "$tmp/dynamic_shift_large.o")
+for relocation in R_SPU_ADDR16_HI R_SPU_ADDR16_LO R_SPU_ADDR32; do
+    if ! grep -Fq "$relocation" <<<"$large_mem_relocations"; then
+        printf '%s\n' "$large_mem_relocations" >&2
+        echo "LLVM large-memory object is missing $relocation" >&2
+        exit 1
+    fi
+done
 
 optimized_loop_disassembly=$("$spu_objdump" -dr "$tmp/optimized_loop.o")
 if [[ "$optimized_loop_disassembly" != *'ai'*'3'* || \
@@ -1361,6 +1378,37 @@ done
     "$tmp/scalar.o" "$tmp/optimized_loop.o" "$tmp/stack_args.o" \
     "$tmp/dynamic_shift.o"
 
+cat >"$tmp/start_large_mem.s" <<'ASM'
+.text
+.p2align 3
+.globl _start
+.type _start,@function
+_start:
+  ilhu $1, 3
+  iohl $1, 0xf000
+  brsl $lr, read_spu_reloc_pointer
+  wrch $ch28, $3
+  stop 0
+ASM
+"$spu_as" -o "$tmp/start_large_mem.o" "$tmp/start_large_mem.s"
+"$spu_ld" --section-start=.rodata=0x10010 -e _start \
+    -o "$tmp/large_mem.elf" "$tmp/start_large_mem.o" \
+    "$tmp/dynamic_shift_large.o"
+large_mem_symbols=$("$spu_readelf" -s "$tmp/large_mem.elf")
+if ! grep -Eq '00010010[[:space:]].*SPU_RELOC_POINTER' \
+        <<<"$large_mem_symbols"; then
+    printf '%s\n' "$large_mem_symbols" >&2
+    echo "large-memory fixture did not place its static pointer above 64 KiB" >&2
+    exit 1
+fi
+large_mem_disassembly=$("$spu_objdump" -d "$tmp/large_mem.elf")
+if [[ "$large_mem_disassembly" != *'ilhu'*',1'* || \
+      "$large_mem_disassembly" != *'iohl'*',16'* ]]; then
+    printf '%s\n' "$large_mem_disassembly" >&2
+    echo "large-memory linked address did not resolve its high and low halves" >&2
+    exit 1
+fi
+
 executable_header=$("$spu_readelf" -h "$tmp/scalar.elf")
 if [[ "$executable_header" != *'Type:                              EXEC (Executable file)'* || \
       "$executable_header" != *'Machine:                           SPU'* ]]; then
@@ -1378,6 +1426,28 @@ fi
 if ! grep -Fq '####### stop instruction reached:' "$tmp/emulator.log"; then
     cat "$tmp/emulator.log" >&2
     echo "LLVM-generated SPU program did not reach stop" >&2
+    exit 1
+fi
+
+if ! (cd "$tmp" && ANERG_MBOX="$tmp/large_mem_mailbox" \
+      timeout "${SPU_EMULATOR_TIMEOUT:-10s}" "$emulator" \
+      "$tmp/large_mem.elf") >"$tmp/large_mem_emulator.log" 2>&1; then
+    cat "$tmp/large_mem_emulator.log" >&2
+    echo "LLVM large-memory SPU image failed or timed out in the emulator" >&2
+    exit 1
+fi
+if ! grep -Fq '####### stop instruction reached:' \
+        "$tmp/large_mem_emulator.log"; then
+    cat "$tmp/large_mem_emulator.log" >&2
+    echo "LLVM large-memory SPU image did not reach stop" >&2
+    exit 1
+fi
+large_mem_bytes=$(wc -c <"$tmp/large_mem_mailbox")
+large_mem_actual=$(od -An -v -tx1 "$tmp/large_mem_mailbox" | \
+    tr -d '[:space:]')
+if [[ "$large_mem_bytes" != 4 || "$large_mem_actual" != 5a17c0de ]]; then
+    cat "$tmp/large_mem_emulator.log" >&2
+    echo "expected large-memory pointer result 5a17c0de; got ${large_mem_actual:-<empty>} ($large_mem_bytes bytes)" >&2
     exit 1
 fi
 
@@ -1419,4 +1489,4 @@ if [[ "$byte_count" != 464 || "$actual" != "$expected" ]]; then
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic, relocatable static pointers, 64-bit comparisons, memory, and C ABI, narrow memory accesses, byte-swap, shifts, rotates, bit-count, branch, loop, call, stack-argument ABI, and pointer-memory subset: direct LLVM ELF32 EM_SPU objects; emulator returned one hundred sixteen expected words and reached stop\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic, 64-bit comparisons, memory, C ABI, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 116 main results and validated a static pointer above 64 KiB in large-memory mode\n'

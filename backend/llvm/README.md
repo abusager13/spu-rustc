@@ -85,6 +85,9 @@ memory operations:
    A Rust static-pointer fixture emits `R_SPU_ADDR18` to locate the pointer and
    `R_SPU_ADDR32` for its initialized target address. Volatile byte reads
    follow the pointer, reassemble `0x5a17c0de`, and pass in the emulator.
+   A separate `+large_mem` build emits `R_SPU_ADDR16_HI` and
+   `R_SPU_ADDR16_LO`; its linker places the pointer at `0x10010`, and the
+   emulator reads the same value after both halves are resolved.
 
 In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
@@ -174,13 +177,14 @@ general merge/phi cases, and the rest of the ABI remain unvalidated here.
 LLVM now has an experimental MC code emitter, assembler backend, and ELF object
 writer for the instruction and relocation forms exercised by the smoke check.
 `llc -filetype=obj` directly emits the tested CellSPU objects, including
-`R_SPU_ADDR16`, `R_SPU_ADDR18`, `R_SPU_ADDR32`, and `R_SPU_REL16` relocations.
+`R_SPU_ADDR16`, `R_SPU_ADDR16_HI`, `R_SPU_ADDR16_LO`, `R_SPU_ADDR18`,
+`R_SPU_ADDR32`, and `R_SPU_REL16` relocations.
 The object writer also maps `R_SPU_REL32`, but no LLVM-generated fixture
-currently exercises it. This does not
-implement or validate the full SPU instruction encoder or relocation set.
-High/low symbol relocations used by the large-memory address sequence have not
-been implemented in the MC emitter. Static data access is covered by the one
-listed small-memory pointer case, not by arbitrary global addressing.
+currently exercises it. This work does not implement or validate the full SPU
+instruction encoder or relocation set.
+High/low symbol relocations are tested for the address sequence selected by
+`+large_mem`, with the pointer linked at `0x10000`. This does not validate
+arbitrary global addressing or all large-memory code paths.
 Branch-hint `HBRA` instructions currently occupy their instruction slot as an
 SPU no-op, so branch prediction hints are dropped. Unsupported instruction
 forms can still fail object emission. The tested variable shifts explicitly

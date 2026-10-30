@@ -171,15 +171,16 @@ execution gate is passed.
    halfword loads; a byte store; packed halfword and doubleword load/stores
    crossing a 16-byte boundary; aligned `u64` memory accesses; and a
    GCC-to-Rust `u64` addition call checking two 64-bit arguments and the
-   64-bit return; and a Rust static pointer read through `R_SPU_ADDR18` and
-   `R_SPU_ADDR32` relocations. A 73rd
-   `u32` argument passes through GCC-to-Rust,
-   Rust forwarding, and a Rust-generated call with constant arguments.
+   64-bit return; a Rust static pointer read through `R_SPU_ADDR18` and
+   `R_SPU_ADDR32` relocations; and a separate large-memory image with
+   `R_SPU_ADDR16_HI`/`LO` relocations linked at `0x10010`. A 73rd `u32`
+   argument passes through GCC-to-Rust, Rust forwarding, and a Rust-generated
+   call with constant arguments.
    This validates a narrow Rust-source-to-LLVM path, not a maintained
    `rustc --target=spu` route. LLVM directly emits ELF objects for the tested
    subset; the MC encoder and relocation support remain incomplete. The smoke
-   test now checks direct static-pointer addressing plus initialized-pointer
-   relocation. See
+   test now checks direct and split-half static-pointer addressing plus
+   initialized-pointer relocation. See
    `backend/llvm/README.md` for the reproduction command and exact limits.
 
    A direct-rustc integration proof now complements this harness: a custom

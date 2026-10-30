@@ -245,11 +245,23 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
                                           Fixups);
       return 0x42000000 | (Address << 7) | reg(MI, 0);
     }
+    if (Name == "IOHLlo") {
+      uint32_t Low = immediateOrFixup(MI, 2, 16,
+                                      SPU::fixup_spu_addr16_lo, false,
+                                      Fixups);
+      return 0x60800000 | (Low << 7) | reg(MI, 0);
+    }
     if (Name == "IOHLf32" || Name == "IOHLr32" ||
         Name == "IOHLv2i64" || Name == "IOHLv4i32")
       return 0x60800000 | (immediate(MI, 2, 16) << 7) | reg(MI, 0);
-    if (Name.starts_with("ILHU"))
-      return (0x41000000 | (immediate(MI, 1, 16) << 7) | reg(MI, 0));
+    if (Name.starts_with("ILHU")) {
+      uint32_t High = Name == "ILHUhi"
+                          ? immediateOrFixup(MI, 1, 16,
+                                             SPU::fixup_spu_addr16_hi, false,
+                                             Fixups)
+                          : immediate(MI, 1, 16);
+      return 0x41000000 | (High << 7) | reg(MI, 0);
+    }
     if (Name.starts_with("IL"))
       return (0x40800000 | (immediate(MI, 1, 16) << 7) | reg(MI, 0));
     if (Name == "LNOP" || Name == "HBRA")

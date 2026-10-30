@@ -121,8 +121,9 @@ a helper call; 16-bit returns through a GCC ABI caller; and unsafe raw-pointer
 `u32` local-store loads and stores, signed and unsigned byte and halfword
 loads, a byte store, aligned and packed `u64` loads and stores, and packed
 halfword and doubleword accesses that cross a 16-byte boundary. A Rust static
-pointer is read through `R_SPU_ADDR18` and `R_SPU_ADDR32` relocations. A GCC caller
-also passes two `u64` values to Rust and checks the returned sum. The 73rd
+pointer is read through `R_SPU_ADDR18` and `R_SPU_ADDR32` relocations; a second
+large-memory image tests `R_SPU_ADDR16_HI`/`LO` at linked address `0x10010`.
+A GCC caller also passes two `u64` values to Rust and checks the returned sum. The 73rd
 `u32` argument also passes through
 GCC-to-Rust, Rust forwarding, and a Rust call with constant arguments. The smoke harness
 replaces host IR's data layout and triple with the CellSPU values before `llc`;

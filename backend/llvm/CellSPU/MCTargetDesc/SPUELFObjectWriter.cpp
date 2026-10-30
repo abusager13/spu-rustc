@@ -33,6 +33,10 @@ public:
       return SPU::R_SPU_REL16;
     case SPU::fixup_spu_addr18:
       return SPU::R_SPU_ADDR18;
+    case SPU::fixup_spu_addr16_hi:
+      return SPU::R_SPU_ADDR16_HI;
+    case SPU::fixup_spu_addr16_lo:
+      return SPU::R_SPU_ADDR16_LO;
     case FK_Data_4:
       return IsPCRel ? SPU::R_SPU_REL32 : SPU::R_SPU_ADDR32;
     default:

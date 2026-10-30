@@ -32,6 +32,8 @@ public:
         {"fixup_spu_addr16", 7, 16, 0},
         {"fixup_spu_rel16", 7, 16, 0},
         {"fixup_spu_addr18", 7, 18, 0},
+        {"fixup_spu_addr16_hi", 7, 16, 0},
+        {"fixup_spu_addr16_lo", 7, 16, 0},
     };
     if (Kind < FirstTargetFixupKind)
       return MCAsmBackend::getFixupKindInfo(Kind);
@@ -51,6 +53,8 @@ public:
     if (Fixup.getKind() != SPU::fixup_spu_addr16 &&
         Fixup.getKind() != SPU::fixup_spu_rel16 &&
         Fixup.getKind() != SPU::fixup_spu_addr18 &&
+        Fixup.getKind() != SPU::fixup_spu_addr16_hi &&
+        Fixup.getKind() != SPU::fixup_spu_addr16_lo &&
         Fixup.getKind() != FK_Data_4)
       report_fatal_error("unsupported CellSPU fixup kind");
 
@@ -69,6 +73,17 @@ public:
       uint32_t Word = support::endian::read32be(Location);
       Word = (Word & ~0x01ffff80U) |
              ((static_cast<uint32_t>(Value) & 0x3ffffU) << 7);
+      support::endian::write32be(Location, Word);
+      return;
+    }
+
+    if (Fixup.getKind() == SPU::fixup_spu_addr16_hi ||
+        Fixup.getKind() == SPU::fixup_spu_addr16_lo) {
+      uint64_t EncodedValue =
+          Fixup.getKind() == SPU::fixup_spu_addr16_hi ? Value >> 16 : Value;
+      uint32_t Word = support::endian::read32be(Location);
+      Word = (Word & ~0x007fff80U) |
+             ((static_cast<uint32_t>(EncodedValue) & 0xffffU) << 7);
       support::endian::write32be(Location, Word);
       return;
     }

@@ -16,6 +16,8 @@ enum Fixups {
   fixup_spu_addr16 = FirstTargetFixupKind,
   fixup_spu_rel16,
   fixup_spu_addr18,
+  fixup_spu_addr16_hi,
+  fixup_spu_addr16_lo,
   NumTargetFixupKinds
 };
 

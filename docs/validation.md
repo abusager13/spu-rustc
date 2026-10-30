@@ -766,3 +766,11 @@ physical hardware.
   suite passed all 116 mailbox words. This does not implement the high/low
   symbol relocations needed by the large-memory address sequence, nor does it
   validate the complete SPU relocation set.
+- Added `R_SPU_ADDR16_HI` and `R_SPU_ADDR16_LO` fixups for the `ILHU`/`IOHL`
+  address sequence chosen by CellSPU's `+large_mem` feature. A second native
+  object links its Rust static pointer at `0x10010`, forcing nonzero high and
+  low relocation halves; GNU `spu-as` disassembly matched the direct LLVM object, and
+  the emulator read `0x5a17c0de` through the relocated pointer. The regular
+  backend image still passes all 116 results. This exercises one large-memory
+  static-pointer path; it does not validate every large-memory access or the
+  full relocation set.
