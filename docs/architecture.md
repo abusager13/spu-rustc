@@ -32,6 +32,24 @@ repository's separate C++ port adds an experimental `cellspu` target to a
 custom LLVM build. A maintained `rustc --target=spu-sony-ps3` path still needs
 that backend and a Rust target specification integrated together.
 
+LLVM target backends use LLVM's C++ target interfaces, which is why the
+CellSPU backend source in this repository is C++. The Rust compiler frontend
+and project programs remain Rust; rustc lowers a Rust crate to LLVM IR and
+hands it to the CellSPU target code for instruction selection, ABI lowering,
+assembly, and ELF generation. This is the primary compiler direction, while
+the in-tree scalar translator remains a temporary validation harness.
+
+A custom stage1 rustc has now been built against the maintained LLVM port and
+used to compile a minimal `#![no_core]` `u32` addition directly to ELF32
+big-endian `EM_SPU`. The object contains native SPU `a`, links with a small
+startup wrapper, and returns 42 in the emulator. This uses an experimental
+custom JSON target and PowerPC-named LLVM initializer aliases required by
+rustc's build glue. Rustc currently panics when this target uses `extern "C"`
+because it has no C ABI lowering for `arch = "spu"`; the tested function uses
+Rust ABI. This first integration proof does not build `core` or demonstrate
+ordinary `#![no_std]` support. See
+[`experiments/rustc-cellspu`](../experiments/rustc-cellspu/README.md).
+
 LLVM's historical `CellSPU` backend was removed in November 2012 in
 [`llvm-project` commit 950d870](https://github.com/llvm/llvm-project/commit/950d8703b1e79df72b8acda09421d1e0c9f262b8).
 The [code before removal](https://github.com/llvm-mirror/llvm/tree/ac99eed043e84905bc2fb299ccaf5809e9c0e90f/lib/Target/CellSPU)

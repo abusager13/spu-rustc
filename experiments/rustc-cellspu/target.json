@@ -1,0 +1,19 @@
+{
+  "arch": "spu",
+  "data-layout": "E-p:32:32:128-f64:64:128-f32:32:128-i64:32:128-i32:32:128-i16:16:128-i8:8:128-i1:8:128-a:0:128-v64:64:128-v128:128:128-s:128:128-n32:64",
+  "env": "",
+  "executables": true,
+  "linker-flavor": "gnu-cc",
+  "llvm-target": "cellspu-unknown-elf",
+  "max-atomic-width": 0,
+  "os": "none",
+  "panic-strategy": "abort",
+  "target-endian": "big",
+  "target-pointer-width": 32,
+  "vendor": "sony",
+  "target-c-int-width": 32,
+  "linker": "spu-gcc",
+  "cpu": "v0",
+  "relocation-model": "static",
+  "position-independent-executables": false
+}

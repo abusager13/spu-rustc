@@ -34,6 +34,15 @@ and stores in local store, and a
 separate optimized loop with loop-carried values and a call in its body. This
 does not provide `rustc --target=spu` or build `core` for SPU.
 
+A separate, first direct-rustc proof now builds a custom stage1 compiler against
+this LLVM target and compiles one `#![no_core]` `u32` addition function straight
+to a big-endian `EM_SPU` object. Its native `a` instruction links and returns
+42 in the emulator. This uses an experimental target JSON and a narrow LLVM
+initializer compatibility bridge; it does not demonstrate `#![no_std]`, a
+build of `core`, or a supported rustc target. See
+[`experiments/rustc-cellspu`](experiments/rustc-cellspu/README.md) for the
+reproduction steps and limits.
+
 Supported scalar functions have zero to 75 32-bit ABI parameters: integer
 values or pointers interpreted as 32-bit local-store addresses, with 72
 register-passed parameters and up to three stack-passed arguments. They support

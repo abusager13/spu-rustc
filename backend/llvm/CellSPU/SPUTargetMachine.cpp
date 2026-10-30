@@ -78,3 +78,35 @@ extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
 LLVMInitializeCellSPUTarget() {
   RegisterTargetMachine<SPUTargetMachine> X(TheCellSPUTarget);
 }
+
+#if defined(LLVM_CELLSPU_RUSTC_POWERPC_INIT_SHIM)
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
+LLVMInitializeCellSPUTargetInfo();
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
+LLVMInitializeCellSPUTargetMC();
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
+LLVMInitializeCellSPUAsmPrinter();
+
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
+LLVMInitializePowerPCTargetInfo() {
+  LLVMInitializeCellSPUTargetInfo();
+}
+
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
+LLVMInitializePowerPCTarget() {
+  LLVMInitializeCellSPUTarget();
+}
+
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
+LLVMInitializePowerPCTargetMC() {
+  LLVMInitializeCellSPUTargetMC();
+}
+
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
+LLVMInitializePowerPCAsmPrinter() {
+  LLVMInitializeCellSPUAsmPrinter();
+}
+
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
+LLVMInitializePowerPCAsmParser() {}
+#endif

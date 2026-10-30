@@ -619,3 +619,23 @@ physical hardware.
   does not use a maintained
   rustc SPU target or build SPU `core`. No PPU loading or hardware execution
   was tested.
+
+- Built the maintained LLVM 23.1.1 CellSPU shared library and a custom rustc
+  1.99.1 stage1 compiler against it. Rustc's build glue expects PowerPC LLVM
+  initializer names and a `powerpc` component, so this build uses opt-in
+  CellSPU initializer aliases and
+  `scripts/llvm-config-cellspu-rustc.sh`; the aliases initialize the CellSPU
+  target and do not enable PowerPC code generation. The source checkout used
+  for rustc was left unchanged.
+- Added `experiments/rustc-cellspu/` and ran
+  `scripts/test-rustc-cellspu.sh` with that custom rustc, the PS3 SPU binutils,
+  and the pinned `anergistic` emulator. Rustc accepted the experimental target
+  JSON and directly compiled a minimal `#![no_core]` Rust `u32` addition to an
+  ELF32 big-endian `EM_SPU` relocatable object. `spu-objdump` showed native
+  `a $3,$4,$3` and `bi $0`; GNU `spu-ld` linked the object with the test entry
+  wrapper, and the emulator returned `42` in the mailbox and reached `stop`.
+  The function uses Rust ABI: attempting `extern "C"` on this custom `spu`
+  architecture panicked in rustc with `no lowering implemented for spu`.
+  This proves only a direct, single-function `#![no_core]` path. It does not
+  compile ordinary `#![no_std]` code, build `core`, integrate a target into
+  rustc's source tree, or validate PPU loading or PS3 hardware execution.

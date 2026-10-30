@@ -45,6 +45,13 @@ add_llvm_target(CellSPUCodeGen
   CellSPU
   )
 
+option(LLVM_CELLSPU_RUSTC_POWERPC_INIT_SHIM
+  "Provide the PowerPC initializer names used by rustc's LLVM glue" OFF)
+if (LLVM_CELLSPU_RUSTC_POWERPC_INIT_SHIM)
+  target_compile_definitions(LLVMCellSPUCodeGen
+    PRIVATE LLVM_CELLSPU_RUSTC_POWERPC_INIT_SHIM)
+endif()
+
 add_subdirectory(MCTargetDesc)
 add_subdirectory(TargetInfo)
 

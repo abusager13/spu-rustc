@@ -68,6 +68,18 @@ helper call, plus unsafe raw-pointer `u32` loads and stores:
    local-store block, store `0xaabbccdd` into its second word, then reload all
    four words to verify the other three were preserved.
 
+In addition to the host-rustc-to-`llc` harness, a separate minimal direct-rustc
+probe now builds a custom stage1 rustc against this target. That compiler emits
+an `EM_SPU` object directly from a `#![no_core]` Rust `u32` addition function;
+the object contains native `a $3,$4,$3`, links with a small SPU entry wrapper,
+and returns 42 in the emulator. The probe uses an experimental custom target
+JSON, Rust ABI, and narrowly scoped initializer/component aliases for rustc's
+build glue. It does not build or use `core`, does not show ordinary `#![no_std]`
+support, and does not make this a supported in-tree rustc target. Run it with
+[`scripts/test-rustc-cellspu.sh`](../../scripts/test-rustc-cellspu.sh); setup
+and exact constraints are recorded in
+[`experiments/rustc-cellspu`](../../experiments/rustc-cellspu/README.md).
+
 Run the smoke check with LLVM 23.1.1 `llc`, the PS3 SPU binutils, and the
 standalone emulator available:
 
@@ -96,15 +108,15 @@ cmake --build /path/to/llvm-build --target llc -j6
 
 ## Current limits
 
-The passing smoke check starts with Rust source, but invokes host `rustc` first
-and then retargets its LLVM IR with a separate `llc` command. The harness
-explicitly replaces the host data layout and triple with the backend's CellSPU
-values, so it tests backend lowering of 32-bit pointers but not rustc's ability
-to emit IR for that layout. It does not show that `rustc --target=spu` can emit
-SPU code. This repository still has no maintained Rust target specification or
-rustc backend registration for SPU, and `core` and target `compiler_builtins` do
-not build for this target. The `cellspu` LLVM target is experimental; only the
-listed scalar operations, all signed and unsigned `i32` and `i16` comparison
+The larger smoke check starts with Rust source, but invokes host `rustc` first
+and then retargets its LLVM IR with a separate `llc` command. The direct-rustc
+probe covers only one `u32` addition with `#![no_core]`. Together, they do not
+demonstrate ordinary `#![no_std]` code through rustc for SPU or a supported
+`rustc --target=spu` workflow. This repository still has no maintained Rust
+target specification integrated into the rustc source tree, and `core` and
+target `compiler_builtins` do not build for this target. The `cellspu` LLVM
+target is experimental; only the listed scalar operations, all signed and
+unsigned `i32` and `i16` comparison
 branches, aligned `u32` local-store
 pointer loads/stores, and the two loop fixtures have run in the emulator. A
 single count for each rotate direction, one byte-swap input, and only the
@@ -151,8 +163,9 @@ specified and tested.
    SPU binutils, including branch hints and additional object forms.
 2. Add fixtures for more branch predicates, loop shapes, merge/phi cases,
    calls, and ABI cases, with disassembly and emulator checks.
-3. Integrate the target with rustc, then build and validate `core` and target
-   support before claiming a usable Rust SPU target.
+3. Replace the minimal rustc initializer bridge with maintained target
+   integration, then compile ordinary `#![no_std]` code and build and validate
+   `core` and target support before claiming a usable Rust SPU target.
 4. Test PPU loading and the real entry protocol separately from the current
    direct emulator wrapper.
 

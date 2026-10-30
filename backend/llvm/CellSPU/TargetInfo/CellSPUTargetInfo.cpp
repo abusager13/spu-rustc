@@ -14,7 +14,8 @@ using namespace llvm;
 
 Target llvm::TheCellSPUTarget;
 
-extern "C" void LLVMInitializeCellSPUTargetInfo() {
+extern "C" LLVM_ABI LLVM_EXTERNAL_VISIBILITY void
+LLVMInitializeCellSPUTargetInfo() {
   RegisterTarget<Triple::cellspu>
     X(TheCellSPUTarget, "cellspu", "STI CBEA Cell SPU [experimental]",
       "CellSPU");
