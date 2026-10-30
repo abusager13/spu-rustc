@@ -179,11 +179,13 @@ execution gate is passed.
    `#![no_core]` Rust fixture directly to ELF32 big-endian `EM_SPU` objects.
    It covers `u32` addition, `u64` addition/subtraction, 64-bit bitwise AND,
    and constant and variable `u64` left and logical-right shifts, plus signed
-   `i64` arithmetic-right shifts. GNU SPU binutils match the generated carry,
-   borrow, logic, immediate, and shift encodings, and 88 runtime results pass
-   in the emulator, including variable shift counts across byte and word
-   boundaries, counts 64 and 65, constant shifts by 13, and several signed and
-   unsigned input patterns. This uses an experimental target JSON, Rust ABI, and
+   `i64` arithmetic-right shifts and `u64` wrapping multiplication. GNU SPU
+   binutils match the generated carry, borrow, logic, immediate, shift, and
+   multiply encodings. The arithmetic and shift image checks 88 results; a
+   separate image checks both words from four multiplication products. The
+   tests include variable shift counts across byte and word boundaries, counts
+   64 and 65, constant shifts by 13, and several signed and unsigned input
+   patterns. This uses an experimental target JSON, Rust ABI, and
    narrow initializer aliases. It does not yet compile ordinary `#![no_std]`
    crates, build `core`, or provide an in-tree rustc target. See
    `experiments/rustc-cellspu/`.

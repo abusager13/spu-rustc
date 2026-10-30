@@ -38,10 +38,13 @@ A separate direct-rustc proof builds a custom stage1 compiler against this LLVM
 target and compiles a minimal `#![no_core]` fixture straight to big-endian
 `EM_SPU` objects. It exercises `u32` addition, `u64` addition/subtraction,
 64-bit bitwise AND, constant and variable `u64` left and logical-right shifts,
-and signed `i64` arithmetic-right shifts. GNU SPU binutils match the generated
-carry, borrow, logic, immediate, and shift encodings, and all 88 runtime results pass
-in the emulator. Variable shifts cover counts 0, 1, 7, 8, 31, 32, 40, 63, 64,
-and 65; constant shifts by 13 and multiple signed and unsigned 64-bit input
+signed `i64` arithmetic-right shifts, and `u64` wrapping multiplication.
+GNU SPU binutils match the generated carry, borrow, logic, immediate, shift,
+and multiply encodings. The arithmetic and shift image checks 88 results; a
+separate multiplication image checks four products (eight words) in the
+emulator. The products cover carry between partial products, wraparound, and
+mixed high/low words. Variable shifts cover counts 0, 1, 7, 8, 31, 32, 40, 63,
+64, and 65; constant shifts by 13 and multiple signed and unsigned 64-bit input
 patterns are also exercised. This uses an experimental target JSON and a
 narrow LLVM initializer bridge. It does not demonstrate ordinary
 `#![no_std]`, a build of `core`, or a supported rustc target. See

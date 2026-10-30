@@ -72,11 +72,13 @@ In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
 from a minimal `#![no_core]` fixture with `u32` addition, `u64`
 addition/subtraction, 64-bit bitwise AND, constant and variable `u64` left and
-logical-right shifts, and signed `i64` arithmetic-right shifts. The generated carry,
-borrow, select-mask, rotate, and quadword shift encodings match GNU SPU binutils
-byte for byte.
-A small SPU entry wrapper exercises carry, borrow, high-word, bitwise, and
-left- and right-shift results; all 88 mailbox values pass in the emulator.
+logical-right shifts, signed `i64` arithmetic-right shifts, and wrapping `u64`
+multiplication. The generated carry, borrow, select-mask, rotate, quadword
+shift, and multiply encodings match GNU SPU binutils byte for byte. A small SPU
+entry wrapper exercises carry, borrow, high-word, bitwise, and left- and
+right-shift results; all 88 mailbox values pass in the emulator. A separate
+image exercises four 64-bit wrapping products and checks both words of each
+result, for eight additional mailbox values.
 Variable shift counts are 0, 1, 7, 8, 31, 32, 40, 63, 64, and 65. The test
 also covers sign extension for negative values, positive signed values,
 additional runtime `u64` inputs, and constant shifts by 13. The
@@ -118,9 +120,10 @@ cmake --build /path/to/llvm-build --target llc -j6
 
 The larger smoke check starts with Rust source, but invokes host `rustc` first
 and then retargets its LLVM IR with a separate `llc` command. The direct-rustc
-probe covers only `u32` addition, `u64` addition/subtraction, 64-bit bitwise
-AND, and constant and variable 64-bit shifts in a `#![no_core]` fixture with
-hand-written minimal lang items. Together, they do not demonstrate ordinary
+probe covers only the listed `u32` and `u64` arithmetic and shift operations
+in `#![no_core]` fixtures with hand-written minimal lang items. Multiplication
+is checked for four operand pairs; this is not exhaustive arithmetic
+validation. Together, these paths do not demonstrate ordinary
 `#![no_std]` code through rustc for SPU or a supported `rustc --target=spu`
 workflow. This repository still has no
 maintained Rust target specification integrated into the rustc source tree. A Cargo

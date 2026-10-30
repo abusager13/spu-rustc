@@ -135,10 +135,12 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return 0x54a00000 | (reg(MI, 1) << 7) | reg(MI, 0);
     if (Name == "CNTBv4i32")
       return 0x56800000 | (reg(MI, 1) << 7) | reg(MI, 0);
-    if (Name == "MPYHr32")
+    if (Name == "MPYHr32" || Name == "MPYHv4i32")
       return RR(0x78a00000);
-    if (Name == "MPYUr32")
+    if (Name == "MPYUr32" || Name == "MPYUv4i32")
       return RR(0x79800000);
+    if (Name == "MPYHHUr32" || Name == "MPYHHUv4i32")
+      return RR(0x79c00000);
     if (Name == "CGr32" || Name == "CGr64" || Name == "CGv2i64" ||
         Name == "CGv4i32")
       return RR(0x18400000);

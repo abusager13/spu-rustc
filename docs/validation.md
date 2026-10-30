@@ -611,6 +611,18 @@ in this repository.
    signed inputs, positive signed values, counts 0, 1, 7, 8, 31, 32, 40, 63,
    64, and 65, and masked counts 64 and 65. The experiment remains `#![no_core]`, uses Rust
    ABI and an experimental target JSON, and does not build `core`.
+69. Added direct-rustc coverage for `u64` wrapping multiplication after object
+   emission failed on the vector forms of `mpyu` and `mpyh` selected by LLVM's
+   64-bit lowering. The maintained MC encoder now handles scalar and vector
+   `mpyu`/`mpyh` plus scalar and vector `mpyhhu`. The script reassembles all
+   three instruction forms with GNU SPU binutils and compares their encodings
+   byte for byte. A separate linked image checks both words of four products
+   in the emulator: `0x0000000100000002 * 0x0000000300000004`,
+   `u64::MAX * 2`, `0x0123456789abcdef * 0xfedcba9876543210`, and
+   `0x8000000080000000 * 0x0000000200000003`. The observed results match
+   wrapping modulo-2^64 arithmetic with overflow checks disabled. The test
+   covers four operand pairs and is not exhaustive; it remains a `#![no_core]`
+   Rust-ABI experiment.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
@@ -622,11 +634,10 @@ physical hardware.
 - Installed the pinned `ps3dev/ps3toolchain` `nightly-2026-10-11` under
   `/home/longlive/opt/ps3dev/spu` using `scripts/install-spu-toolchain.sh`.
   This install is outside the repository and is not vendored.
-- `cargo test --offline`: 76 unit tests passed.
 - With the SPU bin directory on `PATH`,
-  `SPU_REQUIRE_E2E=1 cargo test --offline --test e2e -- --nocapture`: all six
-  end-to-end cases passed. These assembled and linked native SPU objects and
-  ELF images; the suite verifies disassembly and ELF metadata.
+  `SPU_REQUIRE_E2E=1 cargo test --offline`: all 76 unit tests and six
+  end-to-end cases passed. The end-to-end suite assembled and linked native
+  SPU objects and ELF images, then checked disassembly and ELF metadata.
 - `scripts/test-llvm-cellspu-tablegen.sh` passed against LLVM 23.1.1 commit
   `6dfe1677ab8dffbc6ec13d53a1e0215d75147689`, generating the CellSPU target
   descriptions and applying the pinned big-endian 32-bit CellSPU triple patch.
@@ -688,6 +699,12 @@ physical hardware.
   and 65, constant shifts by 13, and signed and unsigned values; it reached
   `stop`. The fixture uses Rust ABI; rustc still panics on `extern "C"` for this
   experimental `arch = "spu"` target.
+- The same direct-rustc script compiled a separate `u64` wrapping-multiply
+  fixture. `mpyu`, `mpyh`, and `mpyhhu` encodings matched GNU SPU binutils;
+  four product results were checked as eight mailbox words in the emulator.
+  The LLVM backend suite also passed its 91 emulator results, and
+  `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 76 unit and six end-to-end
+  tests.
 - Attempted Cargo's `-Z build-std=core` path with the custom target and a router
   that uses the host rustc for build scripts. Cargo reached the real `core`
   crate, but rustc panicked on the C ABI for `core::ffi::VaList` with `no

@@ -4,11 +4,13 @@ This experiment builds a minimal `#![no_core]` Rust arithmetic fixture with a
 custom rustc built against this repository's LLVM 23.1.1 CellSPU target. Rustc
 directly emits big-endian ELF32 `EM_SPU` objects. The fixture exercises `u32`
 addition, `u64` addition/subtraction, 64-bit bitwise AND, constant and variable
-`u64` left and logical-right shifts, and signed `i64` arithmetic-right shifts. The
-generated carry, borrow, mask, rotate, and quadword shift encodings match GNU
-SPU binutils byte for byte. GNU `spu-ld` links the objects with a small SPU
-entry wrapper, and the pinned emulator checks 88 results before reaching
-`stop`. Variable shift tests use counts 0, 1, 7, 8, 31, 32, 40, 63, 64, and 65,
+`u64` left and logical-right shifts, signed `i64` arithmetic-right shifts, and
+`u64` wrapping multiplication. The generated carry, borrow, mask, rotate,
+quadword shift, and multiply encodings match GNU SPU binutils byte for byte.
+GNU `spu-ld` links the objects with small SPU entry wrappers, and the pinned
+emulator checks 88 arithmetic and shift results plus eight words from four
+wrapping multiplication products before reaching `stop`. Variable shift tests
+use counts 0, 1, 7, 8, 31, 32, 40, 63, 64, and 65,
 covering byte boundaries and masked count behavior. The tests include negative
 signed values, positive signed values, additional runtime `u64` inputs, and
 constant shifts by 13.
