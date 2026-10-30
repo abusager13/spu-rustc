@@ -780,3 +780,13 @@ physical hardware.
   matches GNU `spu-as` for the optimized-loop branch hint, and the emulator
   still passes all 116 main results. This validates encoding and execution,
   not a performance benefit from the hint.
+- Added direct native `#![no_core]` coverage for a dense ten-arm Rust `u32`
+  `match`. It exposed missing `clgti` and `lqx` encodings in LLVM's MC emitter;
+  both were added, and the resulting object encodings for `clgti`, `lqx`, and
+  `rotqby` match GNU SPU binutils. GNU `spu-ld` linked the object and the
+  emulator checked all ten table arms plus fallback inputs 10 and `u32::MAX`
+  before reaching `stop`. The direct-rustc suite passed its addition,
+  arithmetic/shift, multiplication, and dense-match fixtures. The separate
+  LLVM smoke suite still passed all 116 results and its large-memory pointer
+  image. This tests one optimized integer lookup-table shape; general switch
+  lowering, ordinary `#![no_std]`, `core`, and PPU loading remain future work.

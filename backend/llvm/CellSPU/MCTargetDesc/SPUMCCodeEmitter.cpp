@@ -129,8 +129,12 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RI10(0x4c000000, 2, 1, 0, 10, 0);
     if (Name.starts_with("CGT"))
       return RR(0x48000000);
+    if (Name.starts_with("CLGTI"))
+      return RI10(0x5c000000, 2, 1, 0, 10, 0);
     if (Name.starts_with("CLGTH"))
       return RR(0x59000000);
+    if (Name.starts_with("CLGTB"))
+      return RR(0x5a000000);
     if (Name.starts_with("CLGT"))
       return RR(0x58000000);
     if (Name == "CLZr32")
@@ -282,6 +286,8 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
                                          SPU::fixup_spu_addr16, false, Fixups);
       return 0x30800000 | (Offset << 7) | reg(MI, 0);
     }
+    if (Name.starts_with("LQX"))
+      return RR(0x38800000);
     if (Name.starts_with("LQD"))
       return RI10(0x34000000, 1, 2, 0, 10, 4);
     if (Name.starts_with("STQD"))

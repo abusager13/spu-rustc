@@ -199,6 +199,11 @@ execution gate is passed.
    crates, build `core`, or provide an in-tree rustc target. See
    `experiments/rustc-cellspu/`.
 
+   A second direct-rustc fixture compiles one dense ten-arm `u32` `match` to a
+   constant lookup table. Its `clgti`, `lqx`, and `rotqby` encodings match GNU
+   SPU binutils; the emulator checks all ten arms and two fallback values.
+   This does not validate general switch or enum lowering.
+
 6. **Prove target code generation and ELF correctness.** Define and test the
    `spu-sony-ps3` target contract: SPU ISA, triple, data layout, calling
    convention, address spaces, relocations, stack frames, memory operations,

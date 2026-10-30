@@ -111,6 +111,11 @@ supported in-tree rustc target. Run it with
 and exact constraints are recorded in
 [`experiments/rustc-cellspu`](../../experiments/rustc-cellspu/README.md).
 
+The same direct-rustc script also compiles a separate dense ten-arm `u32`
+`match` fixture. Its `clgti`, `lqx`, and `rotqby` encodings match GNU SPU
+binutils, and the emulator checks every arm plus two fallback inputs. This
+validates one optimized lookup-table shape only.
+
 Run the smoke check with LLVM 23.1.1 `llc`, the PS3 SPU binutils, and the
 standalone emulator available:
 
@@ -208,7 +213,7 @@ specified and tested.
 1. Expand the MC emitter and relocation coverage and validate it against GNU
    SPU binutils, including additional relocation types and object forms.
 2. Add fixtures for more branch predicates, loop shapes, merge/phi cases,
-   calls, and ABI cases, with disassembly and emulator checks.
+   calls, ABI cases, and switch shapes, with disassembly and emulator checks.
 3. Replace the minimal rustc initializer bridge with maintained target
    integration, then compile ordinary `#![no_std]` code and build and validate
    `core` and target support before claiming a usable Rust SPU target.

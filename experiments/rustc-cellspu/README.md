@@ -15,6 +15,13 @@ covering byte boundaries and masked count behavior. The tests include negative
 signed values, positive signed values, additional runtime `u64` inputs, and
 constant shifts by 13.
 
+A separate `#![no_core]` fixture compiles a dense ten-arm `u32` `match` to a
+lookup table. The LLVM MC emitter encodes the unsigned immediate comparison,
+indexed quadword load, and byte rotation used by that sequence; those
+instructions match GNU SPU binutils. Its emulator image checks all ten arms
+plus the fallback for 10 and `u32::MAX`, for twelve results. This covers one
+optimized integer-match shape, not general switch or enum lowering.
+
 The fixture uses Rust ABI because rustc 1.99.1 currently panics while lowering
 `extern "C"` for the custom `arch = "spu"` target. The custom target JSON is
 experimental and is not an in-tree rustc target. The source hand-defines only

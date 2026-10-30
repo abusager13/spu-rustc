@@ -53,6 +53,10 @@ narrow LLVM initializer bridge. It does not demonstrate ordinary
 [`experiments/rustc-cellspu`](experiments/rustc-cellspu/README.md) for the
 reproduction steps and limits.
 
+The direct-rustc suite also checks one dense ten-arm `u32` `match`, including
+the generated lookup-table load, all ten arms, and two fallback values in the
+emulator. This is one optimized match shape, not general switch support.
+
 Supported scalar functions have zero to 75 32-bit ABI parameters: integer
 values or pointers interpreted as 32-bit local-store addresses, with 72
 register-passed parameters and up to three stack-passed arguments. They support
