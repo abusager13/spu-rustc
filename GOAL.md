@@ -129,3 +129,11 @@ emission remain future work. See
 [the LLVM backend port](backend/llvm/README.md),
 [the architecture investigation](docs/architecture.md), and
 [the milestone plan](docs/roadmap.md).
+
+A separate custom stage1 rustc now sends a minimal `#![no_core]` Rust fixture
+directly through the maintained LLVM target to native SPU ELF. It covers `u32`
+addition plus `u64` addition and subtraction. The LLVM MC encoder's `cg`,
+`addx`, `bg`, and `sfx` words match GNU SPU binutils, and six carry, borrow,
+and high-word results pass in the emulator. This is still a narrow experiment:
+it uses Rust ABI and an experimental target JSON, and does not build `core`,
+support ordinary `#![no_std]`, or provide an in-tree rustc target.

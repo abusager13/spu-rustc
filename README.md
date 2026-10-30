@@ -34,12 +34,14 @@ and stores in local store, and a
 separate optimized loop with loop-carried values and a call in its body. This
 does not provide `rustc --target=spu` or build `core` for SPU.
 
-A separate, first direct-rustc proof now builds a custom stage1 compiler against
-this LLVM target and compiles one `#![no_core]` `u32` addition function straight
-to a big-endian `EM_SPU` object. Its native `a` instruction links and returns
-42 in the emulator. This uses an experimental target JSON and a narrow LLVM
-initializer compatibility bridge; it does not demonstrate `#![no_std]`, a
-build of `core`, or a supported rustc target. See
+A separate direct-rustc proof builds a custom stage1 compiler against this LLVM
+target and compiles a minimal `#![no_core]` fixture straight to big-endian
+`EM_SPU` objects. The fixture exercises `u32` addition and `u64` addition and
+subtraction; the four native carry/borrow instructions match GNU SPU binutils,
+and six arithmetic results pass in the emulator. This uses an experimental
+target JSON and a narrow LLVM initializer compatibility bridge. It does not
+demonstrate ordinary `#![no_std]`, a build of `core`, or a supported rustc
+target. See
 [`experiments/rustc-cellspu`](experiments/rustc-cellspu/README.md) for the
 reproduction steps and limits.
 

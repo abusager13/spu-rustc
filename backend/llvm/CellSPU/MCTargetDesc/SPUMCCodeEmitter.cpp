@@ -139,6 +139,18 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RR(0x78a00000);
     if (Name == "MPYUr32")
       return RR(0x79800000);
+    if (Name == "CGr32" || Name == "CGr64" || Name == "CGv2i64" ||
+        Name == "CGv4i32")
+      return RR(0x18400000);
+    if (Name == "ADDXr32" || Name == "ADDXr64" ||
+        Name == "ADDXv2i64" || Name == "ADDXv4i32")
+      return RR(0x68000000);
+    if (Name == "BGr32" || Name == "BGr64" || Name == "BGv2i64" ||
+        Name == "BGv4i32")
+      return RR(0x08400000);
+    if (Name == "SFXr32" || Name == "SFXr64" ||
+        Name == "SFXv2i64" || Name == "SFXv4i32")
+      return RR(0x68200000);
     if (Name == "SFIr32")
       return RI10(0x0c000000, 2, 1, 0, 10, 0);
     if (Name.starts_with("SF"))

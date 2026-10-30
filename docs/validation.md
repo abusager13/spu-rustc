@@ -563,6 +563,18 @@ in this repository.
    lowering use the existing SPU constant-pool load path. The full smoke run
    now checks sixty-seven mailbox words. Other overflow scalar widths, vectors,
    varargs, and the rest of the ABI remain unverified.
+65. Expanded the direct-rustc experiment from one `u32` addition to native
+   `u64` addition and subtraction. This exposed both missing MC encodings for
+   `cg`/`addx` and `bg`/`sfx` and a historical subtraction pattern that passed
+   operands in the wrong order for SPU's subtract-extended operation. Added the
+   four encodings to the maintained MC emitter, reversed the subtraction
+   operands in TableGen, and compared emitted words byte for byte with GNU SPU
+   binutils. `scripts/test-rustc-cellspu.sh` now checks an ELF32 big-endian
+   `EM_SPU` object and six emulator results: carry, no carry, constant high-word
+   addition, borrow, no borrow, and constant high-word subtraction. All six
+   passed and the emulator reached `stop`. This remains a minimal `#![no_core]`
+   Rust-ABI experiment; it does not build `core`, support ordinary `#![no_std]`,
+   or provide an in-tree rustc target.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
@@ -620,22 +632,23 @@ physical hardware.
   rustc SPU target or build SPU `core`. No PPU loading or hardware execution
   was tested.
 
-- Built the maintained LLVM 23.1.1 CellSPU shared library and a custom rustc
-  1.99.1 stage1 compiler against it. Rustc's build glue expects PowerPC LLVM
-  initializer names and a `powerpc` component, so this build uses opt-in
-  CellSPU initializer aliases and
-  `scripts/llvm-config-cellspu-rustc.sh`; the aliases initialize the CellSPU
-  target and do not enable PowerPC code generation. The source checkout used
-  for rustc was left unchanged.
-- Added `experiments/rustc-cellspu/` and ran
-  `scripts/test-rustc-cellspu.sh` with that custom rustc, the PS3 SPU binutils,
-  and the pinned `anergistic` emulator. Rustc accepted the experimental target
-  JSON and directly compiled a minimal `#![no_core]` Rust `u32` addition to an
-  ELF32 big-endian `EM_SPU` relocatable object. `spu-objdump` showed native
-  `a $3,$4,$3` and `bi $0`; GNU `spu-ld` linked the object with the test entry
-  wrapper, and the emulator returned `42` in the mailbox and reached `stop`.
-  The function uses Rust ABI: attempting `extern "C"` on this custom `spu`
-  architecture panicked in rustc with `no lowering implemented for spu`.
-  This proves only a direct, single-function `#![no_core]` path. It does not
-  compile ordinary `#![no_std]` code, build `core`, integrate a target into
-  rustc's source tree, or validate PPU loading or PS3 hardware execution.
+- Rebuilt the maintained LLVM 23.1.1 CellSPU backend and custom rustc 1.99.1
+  stage1 compiler after adding MC encodings for `cg`, `addx`, `bg`, and `sfx`
+  and correcting the 64-bit subtract operand order. Rustc's build glue expects
+  PowerPC LLVM initializer names and a `powerpc` component, so this build uses
+  opt-in CellSPU initializer aliases and
+  `scripts/llvm-config-cellspu-rustc.sh`; the aliases initialize CellSPU only.
+  The Rust source checkout was left unchanged.
+- Ran `scripts/test-rustc-cellspu.sh` with that custom rustc, GNU SPU binutils,
+  and the pinned `anergistic` emulator. Rustc directly emitted ELF32
+  big-endian `EM_SPU` objects from a minimal `#![no_core]` fixture for `u32`
+  addition and `u64` addition/subtraction. The four carry/borrow instruction
+  words match GNU SPU assembler output byte for byte. The linked emulator
+  wrapper checked six results (`1`, `0`, `0x2345789a`, `0xffffffff`, `0`, and
+  `0x01233456`) and reached `stop`. The fixture uses Rust ABI; rustc still
+  panics on `extern "C"` for this experimental `arch = "spu"` target. This does
+  not build `core`, compile ordinary `#![no_std]`, integrate an in-tree target,
+  test PPU loading, or validate PS3 hardware execution.
+- Reran `scripts/test-llvm-cellspu-backend.sh` against the rebuilt LLVM target.
+  The separate host-rustc-to-`llc` smoke suite still passed all ninety-one
+  expected emulator results and reached `stop`.

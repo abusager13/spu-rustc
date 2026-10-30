@@ -281,10 +281,12 @@ def : Pat<(SPUadd64 (v2i64 VECREG:$rA), (v2i64 VECREG:$rB),
 // v2i64, i64 subtraction
 //-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 
-class v2i64_sub_bg<dag lhs, dag rhs>: CodeFrag<(BGv4i32 lhs, rhs)>;
+// SPU subtract-extended computes RB - RA - borrow. Reverse the source
+// operands when lowering the conventional lhs - rhs operation.
+class v2i64_sub_bg<dag lhs, dag rhs>: CodeFrag<(BGv4i32 rhs, lhs)>;
 
 class v2i64_sub<dag lhs, dag rhs, dag bg, dag bg_mask>:
-    CodeFrag<(SFXv4i32 lhs, rhs, (SHUFBv4i32 bg, bg, bg_mask))>;
+    CodeFrag<(SFXv4i32 rhs, lhs, (SHUFBv4i32 bg, bg, bg_mask))>;
 
 def : Pat<(SPUsub64 R64C:$rA, R64C:$rB, (v4i32 VECREG:$rCGmask)),
            (COPY_TO_REGCLASS
