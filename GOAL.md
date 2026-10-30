@@ -109,7 +109,7 @@ linker, and ABI reference. The target source now lives under
 LLVM 23.1.1 release used by the pinned rustc. The complete code-generation
 library and `llc` build, and the backend compiles a narrow Rust-generated
 scalar subset directly to SPU ELF objects. GNU SPU binutils link it to an ELF32
-big-endian `EM_SPU` executable. The pinned emulator checks 103
+big-endian `EM_SPU` executable. The pinned emulator checks 115
 results, including wrapping `u32` multiplication, `swap_bytes`, `leading_zeros`,
 `trailing_zeros`, `leading_ones`, `trailing_ones`, `count_ones`, both rotate
 directions, and immediate and explicitly masked variable left,
@@ -119,8 +119,10 @@ equality, inequality, signed, and unsigned `i64` comparison cases; an
 unoptimized `while` loop; an optimized loop with loop-carried `phi` values and
 a helper call; 16-bit returns through a GCC ABI caller; and unsafe raw-pointer
 `u32` local-store loads and stores, signed and unsigned byte and halfword
-loads, a byte store, and a packed halfword load/store that crosses a 16-byte
-boundary. The 73rd `u32` argument also passes through
+loads, a byte store, aligned and packed `u64` loads and stores, and packed
+halfword and doubleword accesses that cross a 16-byte boundary. A GCC caller
+also passes two `u64` values to Rust and checks the returned sum. The 73rd
+`u32` argument also passes through
 GCC-to-Rust, Rust forwarding, and a Rust call with constant arguments. The smoke harness
 replaces host IR's data layout and triple with the CellSPU values before `llc`;
 this is not a maintained rustc target. LLVM's MC emitter, assembler backend,

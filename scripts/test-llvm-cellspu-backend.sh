@@ -263,6 +263,47 @@ pub unsafe extern "C" fn store_packed_u16(pointer: *mut PackedU16, value: u16) {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn load_u64_high(pointer: *const u64) -> u32 {
+    (unsafe { *pointer } >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn load_u64_low(pointer: *const u64) -> u32 {
+    unsafe { *pointer as u32 }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn store_u64_halves(pointer: *mut u64, high: u32, low: u32) {
+    unsafe { *pointer = ((high as u64) << 32) | low as u64; }
+}
+
+#[repr(C, packed)]
+pub struct PackedU64 {
+    _padding: u8,
+    value: u64,
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn load_packed_u64_high(pointer: *const PackedU64) -> u32 {
+    (unsafe { (*pointer).value } >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn load_packed_u64_low(pointer: *const PackedU64) -> u32 {
+    unsafe { (*pointer).value as u32 }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn store_packed_u64(pointer: *mut PackedU64, high: u32, low: u32) {
+    unsafe { (*pointer).value = ((high as u64) << 32) | low as u64; }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn add_u64_abi(lhs: u64, rhs: u64) -> u64 {
+    lhs.wrapping_add(rhs)
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn max_i16(lhs: i16, rhs: i16) -> i16 {
     if lhs > rhs { lhs } else { rhs }
 }
@@ -570,6 +611,17 @@ extern void store_u8(unsigned char *pointer, unsigned char value);
 struct __attribute__((packed)) packed_u16 { unsigned char padding; unsigned short value; };
 extern unsigned short load_packed_u16(const struct packed_u16 *pointer);
 extern void store_packed_u16(struct packed_u16 *pointer, unsigned short value);
+extern unsigned int load_u64_high(const unsigned long long *pointer);
+extern unsigned int load_u64_low(const unsigned long long *pointer);
+extern void store_u64_halves(unsigned long long *pointer, unsigned int high,
+                             unsigned int low);
+struct __attribute__((packed)) packed_u64 { unsigned char padding; unsigned long long value; };
+extern unsigned int load_packed_u64_high(const struct packed_u64 *pointer);
+extern unsigned int load_packed_u64_low(const struct packed_u64 *pointer);
+extern void store_packed_u64(struct packed_u64 *pointer, unsigned int high,
+                             unsigned int low);
+extern unsigned long long add_u64_abi(unsigned long long lhs,
+                                      unsigned long long rhs);
 
 unsigned int gcc_read_u8_samples(unsigned char *bytes) {
     return ((unsigned int)load_u8(bytes) << 24) |
@@ -628,6 +680,69 @@ unsigned int gcc_store_packed_u16_and_read_neighbors(unsigned char *bytes) {
 unsigned int gcc_read_packed_u16_after_store(unsigned char *bytes) {
     struct packed_u16 *packed = (struct packed_u16 *)(bytes + 14);
     return (unsigned int)load_packed_u16(packed);
+}
+
+unsigned int gcc_read_u64_high(unsigned char *bytes) {
+    return load_u64_high((unsigned long long *)(bytes + 8));
+}
+
+unsigned int gcc_read_u64_low(unsigned char *bytes) {
+    return load_u64_low((unsigned long long *)(bytes + 8));
+}
+
+unsigned int gcc_store_u64_and_read_neighbors(unsigned char *bytes) {
+    store_u64_halves((unsigned long long *)(bytes + 8), 0xa1b2c3d4, 0xe5f60718);
+    return ((unsigned int)bytes[7] << 24) |
+           ((unsigned int)bytes[8] << 16) |
+           ((unsigned int)bytes[15] << 8) | bytes[16];
+}
+
+unsigned int gcc_read_u64_high_after_store(unsigned char *bytes) {
+    return load_u64_high((unsigned long long *)(bytes + 8));
+}
+
+unsigned int gcc_read_u64_low_after_store(unsigned char *bytes) {
+    return load_u64_low((unsigned long long *)(bytes + 8));
+}
+
+unsigned int gcc_read_packed_u64_high(unsigned char *bytes) {
+    struct packed_u64 *packed = (struct packed_u64 *)(bytes + 12);
+    return load_packed_u64_high(packed);
+}
+
+unsigned int gcc_read_packed_u64_low(unsigned char *bytes) {
+    struct packed_u64 *packed = (struct packed_u64 *)(bytes + 12);
+    return load_packed_u64_low(packed);
+}
+
+unsigned int gcc_store_packed_u64_and_read_neighbors(unsigned char *bytes) {
+    struct packed_u64 *packed = (struct packed_u64 *)(bytes + 12);
+    store_packed_u64(packed, 0x11223344, 0x55667788);
+    return ((unsigned int)bytes[12] << 24) |
+           ((unsigned int)bytes[13] << 16) |
+           ((unsigned int)bytes[20] << 8) | bytes[21];
+}
+
+unsigned int gcc_read_packed_u64_high_after_store(unsigned char *bytes) {
+    struct packed_u64 *packed = (struct packed_u64 *)(bytes + 12);
+    return load_packed_u64_high(packed);
+}
+
+unsigned int gcc_read_packed_u64_low_after_store(unsigned char *bytes) {
+    struct packed_u64 *packed = (struct packed_u64 *)(bytes + 12);
+    return load_packed_u64_low(packed);
+}
+
+unsigned int gcc_add_u64_abi_high(void) {
+    unsigned long long sum = add_u64_abi(0x12345678abcdef01ULL,
+                                          0x1111111122222222ULL);
+    return (unsigned int)(sum >> 32);
+}
+
+unsigned int gcc_add_u64_abi_low(void) {
+    unsigned long long sum = add_u64_abi(0x12345678abcdef01ULL,
+                                          0x1111111122222222ULL);
+    return (unsigned int)sum;
 }
 C
 "$spu_cc" -O0 -c -o "$tmp/narrow_memory_bridge.o" "$tmp/narrow_memory_bridge.c"
@@ -1035,6 +1150,40 @@ _start:
   ila $3, narrow_fixture
   brsl $lr, gcc_read_packed_u16_after_store
   wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_u64_high
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_u64_low
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_store_u64_and_read_neighbors
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_u64_high_after_store
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_u64_low_after_store
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_packed_u64_high
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_packed_u64_low
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_store_packed_u64_and_read_neighbors
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_packed_u64_high_after_store
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_packed_u64_low_after_store
+  wrch $ch28, $3
+  brsl $lr, gcc_add_u64_abi_high
+  wrch $ch28, $3
+  brsl $lr, gcc_add_u64_abi_low
+  wrch $ch28, $3
   stop 0
 .data
 .p2align 4
@@ -1225,10 +1374,13 @@ expected+=00000011000000200000001f00000008000000200000000d0000002000000000000000
 expected+=00055555
 expected+=803768aaff80ffff807fff01133799aaffff807fffffff01ffff99aa
 expected+=000037680012abfe13cdef240000cdef
-if [[ "$byte_count" != 412 || "$actual" != "$expected" ]]; then
+expected+=008055aaf00f13cddca118efa1b2c3d4e5f60718
+expected+=f60718ef249abcdee51188f01122334455667788
+expected+=23456789cdf01123
+if [[ "$byte_count" != 460 || "$actual" != "$expected" ]]; then
     cat "$tmp/emulator.log" >&2
     echo "expected mailbox words $expected; got ${actual:-<empty>} ($byte_count bytes)" >&2
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic, 64-bit comparisons, narrow memory accesses, byte-swap, shifts, rotates, bit-count, branch, loop, call, stack-argument ABI, and pointer-memory subset: direct LLVM ELF32 EM_SPU objects; emulator returned one hundred three expected words and reached stop\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic, 64-bit comparisons, memory, and C ABI, narrow memory accesses, byte-swap, shifts, rotates, bit-count, branch, loop, call, stack-argument ABI, and pointer-memory subset: direct LLVM ELF32 EM_SPU objects; emulator returned one hundred fifteen expected words and reached stop\n'

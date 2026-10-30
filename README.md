@@ -29,9 +29,11 @@ executes. The fixture tests scalar operations, wrapping `u32` multiplication,
 immediate `i32` shifts and variable shifts with an explicit five-bit count
 mask, `rotate_left`, `rotate_right`, `swap_bytes`, `leading_zeros`,
 `trailing_zeros`, `leading_ones`, `trailing_ones`, `count_ones`, signed and
-unsigned `i32` and `i16` branches, unsafe raw pointer `u32` loads
-and stores in local store, and a
-separate optimized loop with loop-carried values and a call in its body. This
+unsigned `i32` and `i16` branches, twenty `i64` comparisons, and a GCC-to-Rust
+`u64` addition call. Local-store pointer cases cover `u32`, narrow scalar, and
+`u64` loads and stores, including packed halfwords and doublewords that cross
+16-byte boundaries. A separate optimized loop has loop-carried values and a
+call in its body. This
 does not provide `rustc --target=spu` or build `core` for SPU.
 
 A separate direct-rustc proof builds a custom stage1 compiler against this LLVM
@@ -113,8 +115,10 @@ Its smoke fixture also checks twenty `i64` equality, inequality, signed, and
 unsigned comparisons through the CellSPU backend.
 A GCC-compiled caller also verifies signed and
 unsigned 16-bit return values across the SPU C ABI. The LLVM memory smoke cases
-check narrow scalar loads and stores, including a packed halfword crossing a
-quadword boundary, through raw pointers. A separate `-O1` loop with loop-carried
+check narrow and 64-bit loads and stores, including packed halfword and
+doubleword accesses crossing quadword boundaries, through raw pointers. A GCC
+caller also passes two `u64` values to Rust and checks the 64-bit result. A
+separate `-O1` loop with loop-carried
 `phi` values and a helper call is checked for inputs 0, 1, 2, 5, and 10. The
 smoke check also verifies the 73rd `u32` argument from GCC into Rust, through a
 Rust-generated forwarding call, and in a direct Rust call with constant

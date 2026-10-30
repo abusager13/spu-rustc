@@ -41,7 +41,7 @@ memory operations:
    the SPU C ABI; GNU `spu-ld` links the objects into an executable. GNU
    `spu-as` assembles the small entry wrapper.
 3. The pinned `anergistic`
-   emulator checks all 103 result words and reaches `stop`. In addition
+   emulator checks all 115 result words and reaches `stop`. In addition
    to signed and unsigned `i32` and `i16` branch cases, one mailbox word packs
    twenty `i64` equality, inequality, signed, and unsigned comparison results.
    Signed and unsigned `i64` cases include opposite high/low-word ordering to
@@ -77,6 +77,11 @@ memory operations:
    store a packed halfword across a 16-byte boundary. The caller checks the
    changed bytes, and the packed load returns the stored halfword. The store
    calls also check that their stack spills do not overwrite caller state.
+   Aligned `u64` loads and stores verify both halves and preserve neighboring
+   bytes. Packed `u64` loads and stores at byte offset 13 cross a 16-byte
+   boundary; both halves and the bytes around the access are checked. A GCC
+   caller passes two `u64` arguments to a Rust function and verifies the
+   64-bit return value, including the ABI path for the high and low words.
 
 In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
@@ -142,8 +147,8 @@ for `core::ffi::VaList` because `arch = "spu"` has no foreign-ABI lowering.
 This project does not yet provide the rustc-side ABI support needed to build
 `core` and target `compiler_builtins`. The `cellspu` LLVM
 target is experimental; only the listed scalar operations, all signed and
-unsigned `i32` and `i16` comparison branches, the listed `u32` and narrow
-local-store pointer accesses, and the two loop fixtures have run in the
+unsigned `i32` and `i16` comparison branches, the listed `u32`, narrow, and
+64-bit local-store pointer accesses, and the two loop fixtures have run in the
 emulator. A
 single count for each rotate direction, one byte-swap input, and only the
 listed bit-count inputs are tested; this does not validate other rotate or
@@ -151,14 +156,16 @@ bit-count operations. A
 test-only SPU GCC caller verifies signed and unsigned `i16` return values across
 the C ABI. The stack-argument fixture checks the 73rd `u32` argument across GCC
 and Rust caller/callee boundaries, including a Rust call whose arguments are
-constants; other scalar widths, vectors, varargs, and general ABI behavior
+constants. The `u64` C ABI case covers one signature and one operand pair;
+other 64-bit ABI combinations, vectors, varargs, and general ABI behavior
 remain unvalidated. The optimized loop covers one loop shape with two
 loop-carried values and an ordinary helper call; general loops, calls, and
 `phi` lowering remain unvalidated. The raw-pointer functions are `unsafe`; no
 pointer bounds, provenance, or ownership guarantee is added by this backend test. It
-covers selected accesses in a 32-byte fixture, including one packed halfword
-crossing a 16-byte boundary; this does not validate arbitrary cross-block
-accesses, pointer arithmetic, or general memory semantics. Loops with other control-flow shapes,
+covers selected accesses in a 32-byte fixture, including packed halfword and
+doubleword cases crossing a 16-byte boundary; this does not validate arbitrary
+cross-block accesses, pointer arithmetic, or general memory semantics. Loops
+with other control-flow shapes,
 general merge/phi cases, and the rest of the ABI remain unvalidated here.
 
 LLVM now has an experimental MC code emitter, assembler backend, and ELF object

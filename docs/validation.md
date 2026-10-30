@@ -749,3 +749,11 @@ physical hardware.
   products. `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 76 unit and six
   end-to-end tests. Ordinary `#![no_std]` support, SPU `core`, and PPU loading
   remain unimplemented.
+- Extended the CellSPU smoke fixture to read and write aligned `u64` values and
+  packed `u64` values at byte offset 13, crossing a 16-byte boundary. It checks
+  both halves and surrounding bytes. A GCC caller also passes two `u64`
+  arguments to a Rust addition function and checks the 64-bit result. The direct
+  MC object and GNU assembler disassemblies match for these instructions,
+  including the `CDD` channel mask. The emulator passed all 115 mailbox words
+  and reached `stop`. This covers selected 64-bit memory cases and one C ABI
+  signature; it does not establish general memory or ABI support.
