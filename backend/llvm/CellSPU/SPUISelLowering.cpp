@@ -165,11 +165,13 @@ SPUTargetLowering::SPUTargetLowering(SPUTargetMachine &TM,
 
   // Expand the jumptable branches
   setOperationAction(ISD::BR_JT,        MVT::Other, Expand);
-  // BR_CC is keyed by the compared value type, not MVT::Other. Keeping i32
-  // expanded prevents DAGCombiner from folding BRCOND(SETCC) into an
-  // unselectable BR_CC node; the existing BRCOND patterns select the compare
-  // and branch together.
+  // BR_CC is keyed by the compared value type, not MVT::Other. Keeping the
+  // scalar integer forms expanded prevents DAGCombiner from folding
+  // BRCOND(SETCC) into a node that bypasses the target's compare patterns.
+  // This matters for i64, whose SETCC patterns build a multi-instruction
+  // comparison before the existing BRCOND selection runs.
   setOperationAction(ISD::BR_CC,        MVT::i32,   Expand);
+  setOperationAction(ISD::BR_CC,        MVT::i64,   Expand);
 
   // Custom lower SELECT_CC for most cases, but expand by default
   setOperationAction(ISD::SELECT_CC,    MVT::Other, Expand);

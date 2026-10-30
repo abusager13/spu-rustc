@@ -109,12 +109,13 @@ linker, and ABI reference. The target source now lives under
 LLVM 23.1.1 release used by the pinned rustc. The complete code-generation
 library and `llc` build, and the backend compiles a narrow Rust-generated
 scalar subset directly to SPU ELF objects. GNU SPU binutils link it to an ELF32
-big-endian `EM_SPU` executable. The pinned emulator checks ninety-one
+big-endian `EM_SPU` executable. The pinned emulator checks ninety-two
 results, including wrapping `u32` multiplication, `swap_bytes`, `leading_zeros`,
 `trailing_zeros`, `leading_ones`, `trailing_ones`, `count_ones`, both rotate
 directions, and immediate and explicitly masked variable left,
 logical-right, and arithmetic-right `i32` shifts,
-both outcomes of all ten signed and unsigned `i32` and `i16` branches; an
+both outcomes of all ten signed and unsigned `i32` and `i16` branches; twenty
+equality, inequality, signed, and unsigned `i64` comparison cases; an
 unoptimized `while` loop; an optimized loop with loop-carried `phi` values and
 a helper call; 16-bit returns through a GCC ABI caller; and unsafe raw-pointer
 `u32` local-store loads and stores. The 73rd `u32` argument also passes through

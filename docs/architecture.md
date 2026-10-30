@@ -268,7 +268,12 @@ machine-instruction verification and emit ELF objects directly through LLVM.
 GNU SPU binutils link them, and they run in the pinned emulator with the
 expected results. The LLVM fixture tests
 both emulator outcomes for all ten signed and unsigned `i32` and `i16`
-comparison branches. A test-only GCC caller verifies signed and unsigned
+comparison branches, and exercises twenty signed and unsigned `i64` equality,
+inequality, less-than, less-or-equal, greater-than, and greater-or-equal cases.
+The backend's unsigned 64-bit greater-or-equal sequence uses a reversed
+full-width comparison and mask normalization. The signed greater-than pattern
+was corrected to use signed rather than unsigned comparison instructions.
+A test-only GCC caller verifies signed and unsigned
 `i16` max results across the C ABI.
 Another GCC caller passes 73 `u32` arguments to Rust code, checking that the
 first stack-passed value is read from the maintained 16-byte-slot ABI. The

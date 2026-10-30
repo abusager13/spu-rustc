@@ -714,3 +714,22 @@ physical hardware.
 - Reran `scripts/test-llvm-cellspu-backend.sh` against the rebuilt LLVM target.
   The separate host-rustc-to-`llc` smoke suite still passed all ninety-one
   expected emulator results and reached `stop`.
+- Extended the maintained LLVM backend smoke test with twenty `i64`
+  comparisons covering equality, inequality, signed and unsigned less-than,
+  less-or-equal, greater-than, and greater-or-equal, including values whose
+  high and low words compare in opposite directions. The emulator test exposed
+  a signed `i64` greater-than pattern that used the unsigned instruction and an
+  unsigned greater-or-equal pattern that did not compare the full 64-bit value.
+  Both patterns were corrected; the full-width unsigned greater-or-equal path
+  now compares in reverse and normalizes its mask. The MC emitter gained the
+  tested `gb`, `cgti`, `xswd`, and vector `sfi` encodings; generated object bytes
+  match GNU SPU binutils. `scripts/test-llvm-cellspu-backend.sh` passed all
+  checks, and the emulator returned the packed comparison result
+  `0x00055555` among ninety-two expected mailbox words before reaching `stop`.
+- Re-ran `scripts/test-rustc-cellspu.sh` with the custom stage1 rustc, GNU SPU
+  binutils, and pinned emulator. The no-core addition fixture returned 42; the
+  arithmetic and shift fixture passed 88 emulator results; and the separate
+  `u64` multiplication fixture passed all four products. Then
+  `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 76 unit tests and six
+  end-to-end tests. This still does not build SPU `core` or provide a supported
+  `rustc --target=spu` target.

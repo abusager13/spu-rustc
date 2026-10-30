@@ -40,7 +40,11 @@ helper call, plus unsafe raw-pointer `u32` loads and stores:
    the SPU C ABI; GNU `spu-ld` links the objects into an executable. GNU
    `spu-as` assembles the small entry wrapper.
 3. The pinned `anergistic`
-   emulator checks all ninety-one result words and reaches `stop`. The
+   emulator checks all ninety-two result words and reaches `stop`. In addition
+   to signed and unsigned `i32` and `i16` branch cases, one mailbox word packs
+   twenty `i64` equality, inequality, signed, and unsigned comparison results.
+   Signed and unsigned `i64` cases include opposite high/low-word ordering to
+   exercise full-width comparison. The
    immediate shifts return `0x91a0`, `0x04000000`, and `0xffffffff`; the
    variable-shift cases verify counts 32, 33, and 36 are masked to five bits.
    Wrapping multiplication returns `0x369d0368` for `0x12345678 * 3` and

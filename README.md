@@ -105,6 +105,8 @@ The experimental translator handles a Rust conditional expression only when
 host `rustc` lowers it to straight-line LLVM `select`. Separately, the
 maintained LLVM backend compiles all ten signed and unsigned `i32` and `i16`
 comparison branch predicates to native SPU code, with both outcomes checked.
+Its smoke fixture also checks twenty `i64` equality, inequality, signed, and
+unsigned comparisons through the CellSPU backend.
 A GCC-compiled caller also verifies signed and
 unsigned 16-bit return values across the SPU C ABI. Its memory smoke case
 stores one word through a raw pointer and confirms the other words in the same

@@ -256,6 +256,56 @@ pub extern "C" fn shift_right_const(value: u32) -> u32 {
 pub extern "C" fn shift_arithmetic_const(value: i32) -> i32 {
     value >> 4
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_eq_u64(lhs: u64, rhs: u64) -> u32 {
+    if lhs == rhs { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_ne_u64(lhs: u64, rhs: u64) -> u32 {
+    if lhs != rhs { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_slt_i64(lhs: i64, rhs: i64) -> u32 {
+    if lhs < rhs { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_sle_i64(lhs: i64, rhs: i64) -> u32 {
+    if lhs <= rhs { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_sgt_i64(lhs: i64, rhs: i64) -> u32 {
+    if lhs > rhs { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_sge_i64(lhs: i64, rhs: i64) -> u32 {
+    if lhs >= rhs { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_ult_u64(lhs: u64, rhs: u64) -> u32 {
+    if lhs < rhs { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_ule_u64(lhs: u64, rhs: u64) -> u32 {
+    if lhs <= rhs { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_ugt_u64(lhs: u64, rhs: u64) -> u32 {
+    if lhs > rhs { 1 } else { 0 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn branch_uge_u64(lhs: u64, rhs: u64) -> u32 {
+    if lhs >= rhs { 1 } else { 0 }
+}
 RUST
 
 cat >"$tmp/dynamic_shift.rs" <<'RUST'
@@ -426,6 +476,49 @@ unsigned int gcc_call_max_u16(unsigned short lhs, unsigned short rhs) {
 }
 C
 "$spu_cc" -O0 -c -o "$tmp/abi_bridge.o" "$tmp/abi_bridge.c"
+
+cat >"$tmp/i64_compare_bridge.c" <<'C'
+extern unsigned int branch_eq_u64(unsigned long long lhs, unsigned long long rhs);
+extern unsigned int branch_ne_u64(unsigned long long lhs, unsigned long long rhs);
+extern unsigned int branch_slt_i64(long long lhs, long long rhs);
+extern unsigned int branch_sle_i64(long long lhs, long long rhs);
+extern unsigned int branch_sgt_i64(long long lhs, long long rhs);
+extern unsigned int branch_sge_i64(long long lhs, long long rhs);
+extern unsigned int branch_ult_u64(unsigned long long lhs, unsigned long long rhs);
+extern unsigned int branch_ule_u64(unsigned long long lhs, unsigned long long rhs);
+extern unsigned int branch_ugt_u64(unsigned long long lhs, unsigned long long rhs);
+extern unsigned int branch_uge_u64(unsigned long long lhs, unsigned long long rhs);
+
+unsigned int gcc_compare_i64(void) {
+    long long signed_min = (-9223372036854775807LL - 1LL);
+    unsigned long long unsigned_low = 0x00000000ffffffffULL;
+    unsigned long long unsigned_high = 0x0000000100000000ULL;
+    unsigned int result = 0;
+
+    result |= branch_eq_u64(5ULL, 5ULL) << 0;
+    result |= branch_eq_u64(5ULL, 6ULL) << 1;
+    result |= branch_ne_u64(5ULL, 6ULL) << 2;
+    result |= branch_ne_u64(5ULL, 5ULL) << 3;
+    result |= branch_slt_i64(signed_min, 0LL) << 4;
+    result |= branch_slt_i64(0LL, signed_min) << 5;
+    result |= branch_sle_i64(signed_min, 0LL) << 6;
+    result |= branch_sle_i64(0LL, signed_min) << 7;
+    result |= branch_sgt_i64(0LL, signed_min) << 8;
+    result |= branch_sgt_i64(signed_min, 0LL) << 9;
+    result |= branch_sge_i64(0LL, signed_min) << 10;
+    result |= branch_sge_i64(signed_min, 0LL) << 11;
+    result |= branch_ult_u64(unsigned_low, unsigned_high) << 12;
+    result |= branch_ult_u64(unsigned_high, unsigned_low) << 13;
+    result |= branch_ule_u64(unsigned_low, unsigned_high) << 14;
+    result |= branch_ule_u64(unsigned_high, unsigned_low) << 15;
+    result |= branch_ugt_u64(unsigned_high, unsigned_low) << 16;
+    result |= branch_ugt_u64(unsigned_low, unsigned_high) << 17;
+    result |= branch_uge_u64(unsigned_high, unsigned_low) << 18;
+    result |= branch_uge_u64(unsigned_low, unsigned_high) << 19;
+    return result;
+}
+C
+"$spu_cc" -O0 -c -o "$tmp/i64_compare_bridge.o" "$tmp/i64_compare_bridge.c"
 
 python3 - "$tmp/stack_arg_bridge.c" <<'PY'
 from pathlib import Path
@@ -795,6 +888,8 @@ _start:
   iohl $3, 0x5678
   brsl $lr, swap_bytes
   wrch $ch28, $3
+  brsl $lr, gcc_compare_i64
+  wrch $ch28, $3
   stop 0
 .data
 .p2align 4
@@ -927,6 +1022,7 @@ done
 "$spu_as" -o "$tmp/start.o" "$tmp/start.s"
 "$spu_ld" -e _start -o "$tmp/scalar.elf" \
     "$tmp/start.o" "$tmp/abi_bridge.o" "$tmp/stack_arg_bridge.o" \
+    "$tmp/i64_compare_bridge.o" \
     "$tmp/scalar.o" "$tmp/optimized_loop.o" "$tmp/stack_args.o" \
     "$tmp/dynamic_shift.o"
 
@@ -975,10 +1071,11 @@ expected+=0000246840000000ffffffff
 expected+=00001234
 expected+=369d0368fffffffc
 expected+=00000011000000200000001f00000008000000200000000d000000200000000000000008000000200000000400000020345678127812345678563412
-if [[ "$byte_count" != 364 || "$actual" != "$expected" ]]; then
+expected+=00055555
+if [[ "$byte_count" != 368 || "$actual" != "$expected" ]]; then
     cat "$tmp/emulator.log" >&2
     echo "expected mailbox words $expected; got ${actual:-<empty>} ($byte_count bytes)" >&2
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic, byte-swap, shifts, rotates, bit-count, branch, loop, call, stack-argument ABI, and pointer-memory subset: direct LLVM ELF32 EM_SPU objects; emulator returned ninety-one expected words and reached stop\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic, 64-bit comparisons, byte-swap, shifts, rotates, bit-count, branch, loop, call, stack-argument ABI, and pointer-memory subset: direct LLVM ELF32 EM_SPU objects; emulator returned ninety-two expected words and reached stop\n'

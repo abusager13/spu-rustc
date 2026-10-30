@@ -125,6 +125,8 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RR(0x78000000);
     if (Name.starts_with("CGTH"))
       return RR(0x49000000);
+    if (Name.starts_with("CGTI"))
+      return RI10(0x4c000000, 2, 1, 0, 10, 0);
     if (Name.starts_with("CGT"))
       return RR(0x48000000);
     if (Name.starts_with("CLGTH"))
@@ -135,6 +137,11 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return 0x54a00000 | (reg(MI, 1) << 7) | reg(MI, 0);
     if (Name == "CNTBv4i32")
       return 0x56800000 | (reg(MI, 1) << 7) | reg(MI, 0);
+    if (Name == "GBv4i32" || Name == "GBv4i32_r32" ||
+        Name == "GBv4i32_r16")
+      return 0x36000000 | (reg(MI, 1) << 7) | reg(MI, 0);
+    if (Name.starts_with("XSWD"))
+      return 0x54c00000 | (reg(MI, 1) << 7) | reg(MI, 0);
     if (Name == "MPYHr32" || Name == "MPYHv4i32")
       return RR(0x78a00000);
     if (Name == "MPYUr32" || Name == "MPYUv4i32")
@@ -153,7 +160,7 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
     if (Name == "SFXr32" || Name == "SFXr64" ||
         Name == "SFXv2i64" || Name == "SFXv4i32")
       return RR(0x68200000);
-    if (Name == "SFIr32")
+    if (Name == "SFIr32" || Name == "SFIvec" || Name == "SFIv4i32")
       return RI10(0x0c000000, 2, 1, 0, 10, 0);
     if (Name.starts_with("SF"))
       return RR(0x08000000);

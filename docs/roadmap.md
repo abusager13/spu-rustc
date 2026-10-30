@@ -159,12 +159,13 @@ execution gate is passed.
    before the custom `llc` compiles it. Machine verification passes. LLVM
    directly emits the tested ELF objects, and GNU SPU binutils link an
    ELF32 big-endian `EM_SPU` executable. The pinned emulator returns
-   ninety-one expected mailbox words, including wrapping `u32` multiplication,
+   ninety-two expected mailbox words, including wrapping `u32` multiplication,
    `swap_bytes`, all four zero/one count methods, `count_ones`, both rotate directions, and
    immediate and explicitly
    masked variable left, logical-right, and arithmetic-right `i32` shifts;
    both outcomes of all ten signed and unsigned Rust `i32` and `i16` comparison
-   branches; an unoptimized stack-backed loop; an optimized loop with
+   branches; twenty packed `i64` equality, inequality, signed, and unsigned
+   comparison cases; an unoptimized stack-backed loop; an optimized loop with
    loop-carried `phi` values and a helper call; narrow return values through a
    GCC ABI caller; and unsafe local-store pointer loads and stores that
    preserve adjacent words. A 73rd `u32` argument passes through GCC-to-Rust,
