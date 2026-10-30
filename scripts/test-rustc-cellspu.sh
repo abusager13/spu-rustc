@@ -325,3 +325,64 @@ actual=$(od -An -N48 -tx1 "$tmp/dense_match_mailbox" | tr -d '[:space:]')
 }
 
 echo "rustc 1.99 CellSPU no_core dense match: GNU-matched clgti/lqx/rotqby encodings; emulator checked ten table arms and two fallback inputs and reached stop"
+
+"$rustc" -Z unstable-options \
+    --target="$root/experiments/rustc-cellspu/target.json" \
+    --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
+    -Coverflow-checks=off \
+    -o "$tmp/indexed_memory.o" "$root/experiments/rustc-cellspu/indexed_memory.rs"
+
+indexed_memory_disassembly=$("$spu_objdump" -dr "$tmp/indexed_memory.o")
+for instruction in cwx lqx rotqby shufb stqx; do
+    grep -Eq "${instruction}[[:space:]]+\\$" <<<"$indexed_memory_disassembly" || {
+        echo "Rust indexed-memory object did not contain native SPU $instruction" >&2
+        exit 1
+    }
+done
+
+"$spu_objdump" -d "$tmp/indexed_memory.o" | \
+    awk '$6 ~ /^(cwx|lqx|rotqby|shufb|stqx)$/ { printf "%s", $6; for (i = 7; i <= NF && $i !~ /^#/; i++) printf " %s", $i; print "" }' \
+    >"$tmp/indexed_memory-encoding.s"
+"$spu_as" -o "$tmp/indexed_memory-reference.o" \
+    "$tmp/indexed_memory-encoding.s"
+reference=$("$spu_objdump" -d "$tmp/indexed_memory-reference.o" | \
+    awk '$6 ~ /^(cwx|lqx|rotqby|shufb|stqx)$/ { print $2 $3 $4 $5 }')
+actual_encoding=$("$spu_objdump" -d "$tmp/indexed_memory.o" | \
+    awk '$6 ~ /^(cwx|lqx|rotqby|shufb|stqx)$/ { print $2 $3 $4 $5 }')
+if [[ "$reference" != "$actual_encoding" ]]; then
+    echo "LLVM indexed-memory instruction encodings differ from GNU SPU binutils" >&2
+    echo "SPU assembler: ${reference//$'\n'/ }" >&2
+    echo "LLVM object:   ${actual_encoding//$'\n'/ }" >&2
+    exit 1
+fi
+
+"$spu_as" -o "$tmp/indexed_memory_start.o" \
+    "$root/experiments/rustc-cellspu/indexed_memory_start.s"
+"$spu_ld" -Ttext=0 -e _start -o "$tmp/indexed_memory.elf" \
+    "$tmp/indexed_memory_start.o" "$tmp/indexed_memory.o"
+
+if ! (cd "$tmp" && ANERG_MBOX="$tmp/indexed_memory_mailbox" \
+    timeout "${SPU_EMULATOR_TIMEOUT:-10s}" "$emulator" "$tmp/indexed_memory.elf") \
+    >"$tmp/indexed_memory_emulator.log" 2>&1; then
+    cat "$tmp/indexed_memory_emulator.log" >&2
+    echo "Rust CellSPU indexed-memory emulator run failed or timed out" >&2
+    exit 1
+fi
+grep -Fq '####### stop instruction reached:' "$tmp/indexed_memory_emulator.log" || {
+    cat "$tmp/indexed_memory_emulator.log" >&2
+    echo "Rust CellSPU indexed-memory image did not reach stop" >&2
+    exit 1
+}
+
+mailbox_size=$(wc -c <"$tmp/indexed_memory_mailbox")
+[[ "$mailbox_size" -eq 64 ]] || {
+    echo "Expected sixteen indexed-memory result words, got $mailbox_size bytes" >&2
+    exit 1
+}
+actual=$(od -An -N64 -tx1 "$tmp/indexed_memory_mailbox" | tr -d '[:space:]')
+[[ "$actual" == 111111112222222233333333444444445555555566666666777777778888888811111111deadbeef33333333444444441234567866666666777777770badf00d ]] || {
+    echo "Unexpected Rust CellSPU indexed-memory results: ${actual:-<empty>}" >&2
+    exit 1
+}
+
+echo "rustc 1.99 CellSPU no_core indexed memory: GNU-matched cwx/lqx/rotqby/shufb/stqx encodings; emulator checked eight indexed loads and three stores with neighbor preservation"

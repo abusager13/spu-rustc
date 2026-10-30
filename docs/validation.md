@@ -790,3 +790,13 @@ physical hardware.
   LLVM smoke suite still passed all 116 results and its large-memory pointer
   image. This tests one optimized integer lookup-table shape; general switch
   lowering, ordinary `#![no_std]`, `core`, and PPU loading remain future work.
+- Added an unsafe direct-rustc fixture for runtime-indexed local-store `u32`
+  loads and stores. The MC emitter now covers the `CWX` mask and `STQX` store
+  used alongside `LQX`; the generated `CWX`, `LQX`, `ROTQBY`, `SHUFB`, and
+  `STQX` encodings match GNU SPU binutils. The emulator checked eight initial
+  word loads and all eight words after three stores at indices 1, 4, and 7,
+  confirming adjacent words were preserved across quadword boundaries. The
+  direct-rustc suite passed all fixtures, and the LLVM smoke suite still
+  passed its 116 results and large-memory pointer image. This exercises one
+  aligned 32-byte buffer; bounds, arbitrary pointer arithmetic, and unaligned
+  access remain unvalidated.

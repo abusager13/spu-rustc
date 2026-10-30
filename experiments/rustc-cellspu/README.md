@@ -22,6 +22,14 @@ instructions match GNU SPU binutils. Its emulator image checks all ten arms
 plus the fallback for 10 and `u32::MAX`, for twelve results. This covers one
 optimized integer-match shape, not general switch or enum lowering.
 
+A raw-pointer fixture builds a local-store word address from a base pointer and
+runtime index, then loads or stores through it. The generated `cwx`, `lqx`,
+`rotqby`, `shufb`, and `stqx` encodings match GNU SPU binutils. The emulator
+checks all eight array words before and after stores at indices 1, 4, and 7,
+including neighbor preservation across 16-byte quadwords. These functions are
+`unsafe`; this does not validate bounds, arbitrary pointer arithmetic, or
+unaligned access.
+
 The fixture uses Rust ABI because rustc 1.99.1 currently panics while lowering
 `extern "C"` for the custom `arch = "spu"` target. The custom target JSON is
 experimental and is not an in-tree rustc target. The source hand-defines only

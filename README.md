@@ -56,6 +56,9 @@ reproduction steps and limits.
 The direct-rustc suite also checks one dense ten-arm `u32` `match`, including
 the generated lookup-table load, all ten arms, and two fallback values in the
 emulator. This is one optimized match shape, not general switch support.
+It also exercises runtime-indexed raw-pointer `u32` loads and stores on one
+32-byte array, checking that writes preserve neighboring words. Those
+functions are `unsafe`; this is not a general pointer-safety or bounds check.
 
 Supported scalar functions have zero to 75 32-bit ABI parameters: integer
 values or pointers interpreted as 32-bit local-store addresses, with 72

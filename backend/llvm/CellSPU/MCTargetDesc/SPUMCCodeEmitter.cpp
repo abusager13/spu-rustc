@@ -243,6 +243,8 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RI10(0x3ec00000, 1, 2, 0, 7, 0);
     if (Name == "CDD" || Name == "CDDf64")
       return RI10(0x3ee00000, 1, 2, 0, 7, 0);
+    if (Name.starts_with("CWX"))
+      return RR(0x3ac00000);
     if (Name.starts_with("ILA")) {
       uint32_t Address = immediateOrFixup(MI, 1, 18,
                                           SPU::fixup_spu_addr18, false,
@@ -288,6 +290,8 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
     }
     if (Name.starts_with("LQX"))
       return RR(0x38800000);
+    if (Name.starts_with("STQX"))
+      return RR(0x28800000);
     if (Name.starts_with("LQD"))
       return RI10(0x34000000, 1, 2, 0, 10, 4);
     if (Name.starts_with("STQD"))

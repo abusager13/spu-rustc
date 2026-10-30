@@ -204,6 +204,12 @@ execution gate is passed.
    SPU binutils; the emulator checks all ten arms and two fallback values.
    This does not validate general switch or enum lowering.
 
+   A separate raw-pointer fixture forms a runtime-indexed word address and
+   exercises `cwx`, `lqx`, `rotqby`, `shufb`, and `stqx`. GNU SPU encodings
+   match, and the emulator checks eight word loads plus three stores with
+   neighboring-word preservation. The fixture is `unsafe` and limited to one
+   aligned 32-byte array.
+
 6. **Prove target code generation and ELF correctness.** Define and test the
    `spu-sony-ps3` target contract: SPU ISA, triple, data layout, calling
    convention, address spaces, relocations, stack frames, memory operations,

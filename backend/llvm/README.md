@@ -116,6 +116,14 @@ The same direct-rustc script also compiles a separate dense ten-arm `u32`
 binutils, and the emulator checks every arm plus two fallback inputs. This
 validates one optimized lookup-table shape only.
 
+A separate unsafe raw-pointer fixture computes `base + index * 4` and performs
+dynamic `u32` loads and stores. It exercises `cwx`, `lqx`, `rotqby`, `shufb`,
+and `stqx`; GNU SPU encodings match byte for byte, and the emulator checks all
+eight words before and after stores at indices 1, 4, and 7. This covers one
+aligned 32-byte array and verifies neighboring words are preserved. It does
+not validate pointer bounds, arbitrary address calculations, or unaligned
+access.
+
 Run the smoke check with LLVM 23.1.1 `llc`, the PS3 SPU binutils, and the
 standalone emulator available:
 
