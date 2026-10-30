@@ -128,6 +128,8 @@ cat >"$tmp/carry-encoding.s" <<'ASM'
 .text
 cg $5,$4,$3
 addx $5,$4,$3
+and $3,$4,$3
+iohl $4,0x0607
 ASM
 cat >>"$tmp/carry-encoding.s" <<'ASM'
 bg $5,$4,$3
@@ -135,11 +137,11 @@ sfx $5,$4,$3
 ASM
 "$spu_as" -o "$tmp/carry-encoding.o" "$tmp/carry-encoding.s"
 reference=$("$spu_objdump" -d "$tmp/carry-encoding.o" | \
-    awk '$6 == "cg" || $6 == "addx" || $6 == "bg" || $6 == "sfx" { print $2 $3 $4 $5 }')
+    awk '$6 == "cg" || $6 == "addx" || $6 == "and" || $6 == "bg" || $6 == "sfx" || $6 == "iohl" { print $2 $3 $4 $5 }')
 actual_encoding=$("$spu_objdump" -d "$tmp/u64_arithmetic.o" | \
-    awk '$6 == "cg" || $6 == "addx" || $6 == "bg" || $6 == "sfx" { print $2 $3 $4 $5 }')
+    awk '$6 == "cg" || $6 == "addx" || $6 == "and" || $6 == "bg" || $6 == "sfx" || $6 == "iohl" { print $2 $3 $4 $5 }')
 if [[ "$reference" != "$actual_encoding" ]]; then
-    echo "LLVM carry/borrow instruction encodings differ from SPU GNU binutils" >&2
+    echo "LLVM arithmetic/logic instruction encodings differ from SPU GNU binutils" >&2
     echo "SPU assembler: ${reference//$'\n'/ }" >&2
     echo "LLVM object:   ${actual_encoding//$'\n'/ }" >&2
     exit 1
@@ -151,6 +153,10 @@ grep -Eq 'bg[[:space:]]+\$' <<<"$disassembly" || {
 }
 grep -Eq 'sfx[[:space:]]+\$' <<<"$disassembly" || {
     echo "Rust u64 subtraction object did not contain native SPU sfx" >&2
+    exit 1
+}
+grep -Eq 'and[[:space:]]+\$' <<<"$disassembly" || {
+    echo "Rust u64 bitwise object did not contain native SPU and" >&2
     exit 1
 }
 
@@ -172,10 +178,10 @@ grep -Fq '####### stop instruction reached:' "$tmp/u64_emulator.log" || {
     exit 1
 }
 
-actual=$(od -An -N24 -tx1 "$tmp/u64_mailbox" | tr -d '[:space:]')
-[[ "$actual" == 00000001000000002345789affffffff0000000001233456 ]] || {
+actual=$(od -An -N32 -tx1 "$tmp/u64_mailbox" | tr -d '[:space:]')
+[[ "$actual" == 00000001000000002345789affffffff00000000012334560204060890b0d0f0 ]] || {
     echo "Unexpected Rust u64 arithmetic results: ${actual:-<empty>}" >&2
     exit 1
 }
 
-echo "rustc 1.99 CellSPU no_core u64 add/sub: GNU-matched carry/borrow encodings; emulator checked carry, borrow, high-word, and no-carry cases and reached stop"
+echo "rustc 1.99 CellSPU no_core u64 arithmetic: GNU-matched native encodings; emulator checked add, subtract, and bitwise results and reached stop"

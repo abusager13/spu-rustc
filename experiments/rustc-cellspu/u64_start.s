@@ -51,5 +51,13 @@ _start:
   lnop
   wrch $ch28,$3
   lnop
+  brsl $0,high_word_and
+  lnop
+  wrch $ch28,$3
+  lnop
+  brsl $0,low_word_and
+  lnop
+  wrch $ch28,$3
+  lnop
   stop 0
 .size _start,.-_start

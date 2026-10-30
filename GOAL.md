@@ -132,8 +132,8 @@ emission remain future work. See
 
 A separate custom stage1 rustc now sends a minimal `#![no_core]` Rust fixture
 directly through the maintained LLVM target to native SPU ELF. It covers `u32`
-addition plus `u64` addition and subtraction. The LLVM MC encoder's `cg`,
-`addx`, `bg`, and `sfx` words match GNU SPU binutils, and six carry, borrow,
-and high-word results pass in the emulator. This is still a narrow experiment:
-it uses Rust ABI and an experimental target JSON, and does not build `core`,
-support ordinary `#![no_std]`, or provide an in-tree rustc target.
+addition, `u64` addition/subtraction, and 64-bit bitwise AND. GNU SPU binutils
+match the carry, borrow, logic, and immediate encodings; all eight runtime
+results pass in the emulator. This remains a narrow experiment using Rust ABI
+and an experimental target JSON. It does not build `core`, support ordinary
+`#![no_std]`, or provide an in-tree rustc target.

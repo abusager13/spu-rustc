@@ -563,18 +563,29 @@ in this repository.
    lowering use the existing SPU constant-pool load path. The full smoke run
    now checks sixty-seven mailbox words. Other overflow scalar widths, vectors,
    varargs, and the rest of the ABI remain unverified.
-65. Expanded the direct-rustc experiment from one `u32` addition to native
-   `u64` addition and subtraction. This exposed both missing MC encodings for
-   `cg`/`addx` and `bg`/`sfx` and a historical subtraction pattern that passed
-   operands in the wrong order for SPU's subtract-extended operation. Added the
-   four encodings to the maintained MC emitter, reversed the subtraction
-   operands in TableGen, and compared emitted words byte for byte with GNU SPU
-   binutils. `scripts/test-rustc-cellspu.sh` now checks an ELF32 big-endian
-   `EM_SPU` object and six emulator results: carry, no carry, constant high-word
-   addition, borrow, no borrow, and constant high-word subtraction. All six
-   passed and the emulator reached `stop`. This remains a minimal `#![no_core]`
-   Rust-ABI experiment; it does not build `core`, support ordinary `#![no_std]`,
-   or provide an in-tree rustc target.
+65. Expanded the direct-rustc experiment from `u32` addition to `u64`
+   addition/subtraction and bitwise AND. This exposed missing MC encodings for
+   `cg`/`addx`, `bg`/`sfx`, and `iohl`; the bitwise/truncation path was not
+   runnable until the latter was added. The subtraction regression also
+   exposed that the historical pattern passed operands in the wrong order for
+   SPU's subtract-extended operation. The maintained emitter now supports these
+   forms and TableGen reverses the subtraction operands. The test compares
+   `cg`, `addx`, `bg`, `sfx`, `and`, and `iohl` words byte for byte with GNU SPU
+   binutils. The emulator checks eight results covering carry, no carry,
+   constant high-word addition, borrow, no borrow, constant high-word
+   subtraction, and both halves of 64-bit AND; all pass and reach `stop`.
+   This remains a minimal `#![no_core]` Rust-ABI experiment and does not build
+   `core` or provide an in-tree rustc target.
+66. Attempted a real `cargo -Z build-std=core` build for the experimental target,
+   routing host build scripts through the installed host rustc and target
+   objects through the custom CellSPU rustc. After adding the pinned `rust-src`
+   component, Cargo built the host setup and invoked rustc on the actual `core`
+   crate. Rustc then panicked while computing the C ABI of
+   `core::ffi::VaList` with `no lowering implemented for spu`. No SPU `core`
+   artifact was produced. This confirms that foreign-ABI support in rustc's
+   target call-convention layer, which runs before LLVM, is a required next
+   integration step; choosing a different ABI or skipping the type would not
+   establish a correct target.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
@@ -633,22 +644,27 @@ physical hardware.
   was tested.
 
 - Rebuilt the maintained LLVM 23.1.1 CellSPU backend and custom rustc 1.99.1
-  stage1 compiler after adding MC encodings for `cg`, `addx`, `bg`, and `sfx`
-  and correcting the 64-bit subtract operand order. Rustc's build glue expects
-  PowerPC LLVM initializer names and a `powerpc` component, so this build uses
-  opt-in CellSPU initializer aliases and
-  `scripts/llvm-config-cellspu-rustc.sh`; the aliases initialize CellSPU only.
-  The Rust source checkout was left unchanged.
+  stage1 compiler after adding MC encodings for `cg`, `addx`, `bg`, `sfx`, and
+  `iohl`, plus direct 64-bit AND support and corrected subtraction operand
+  order. Rustc's build glue expects PowerPC LLVM initializer names and a
+  `powerpc` component, so this build uses opt-in CellSPU initializer aliases
+  and `scripts/llvm-config-cellspu-rustc.sh`; the aliases initialize CellSPU
+  only. The Rust source checkout was left unchanged.
 - Ran `scripts/test-rustc-cellspu.sh` with that custom rustc, GNU SPU binutils,
   and the pinned `anergistic` emulator. Rustc directly emitted ELF32
   big-endian `EM_SPU` objects from a minimal `#![no_core]` fixture for `u32`
-  addition and `u64` addition/subtraction. The four carry/borrow instruction
-  words match GNU SPU assembler output byte for byte. The linked emulator
-  wrapper checked six results (`1`, `0`, `0x2345789a`, `0xffffffff`, `0`, and
-  `0x01233456`) and reached `stop`. The fixture uses Rust ABI; rustc still
-  panics on `extern "C"` for this experimental `arch = "spu"` target. This does
-  not build `core`, compile ordinary `#![no_std]`, integrate an in-tree target,
-  test PPU loading, or validate PS3 hardware execution.
+  addition, `u64` addition/subtraction, and 64-bit bitwise AND. The tested
+  instruction words match GNU SPU assembler output byte for byte. The linked
+  emulator wrapper checked eight results (`1`, `0`, `0x2345789a`, `0xffffffff`,
+  `0`, `0x01233456`, `0x02040608`, and `0x90b0d0f0`) and reached `stop`. The
+  fixture uses Rust ABI; rustc still panics on `extern "C"` for this
+  experimental `arch = "spu"` target.
+- Attempted Cargo's `-Z build-std=core` path with the custom target and a router
+  that uses the host rustc for build scripts. Cargo reached the real `core`
+  crate, but rustc panicked on the C ABI for `core::ffi::VaList` with `no
+  lowering implemented for spu`. No `core` artifact was produced; this target
+  still needs foreign-ABI lowering in rustc before ordinary `#![no_std]` support
+  can be claimed.
 - Reran `scripts/test-llvm-cellspu-backend.sh` against the rebuilt LLVM target.
   The separate host-rustc-to-`llc` smoke suite still passed all ninety-one
   expected emulator results and reached `stop`.

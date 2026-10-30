@@ -177,12 +177,12 @@ execution gate is passed.
    A direct-rustc integration proof now complements this harness: a custom
    stage1 rustc built against the CellSPU LLVM target compiles a minimal
    `#![no_core]` Rust fixture directly to ELF32 big-endian `EM_SPU` objects.
-   It covers `u32` addition and `u64` addition/subtraction. Native `cg`,
-   `addx`, `bg`, and `sfx` encodings match GNU SPU binutils, and six arithmetic
-   results pass in the emulator. This uses an experimental target JSON, Rust
-   ABI, and narrow initializer aliases. It does not yet compile ordinary
-   `#![no_std]` crates, build `core`, or provide an in-tree rustc target. See
-   `experiments/rustc-cellspu/`.
+   It covers `u32` addition, `u64` addition/subtraction, and 64-bit bitwise AND.
+   GNU SPU binutils match the generated carry, borrow, logic, and immediate
+   encodings, and eight runtime results pass in the emulator. This uses an
+   experimental target JSON, Rust ABI, and narrow initializer aliases. It does
+   not yet compile ordinary `#![no_std]` crates, build `core`, or provide an
+   in-tree rustc target. See `experiments/rustc-cellspu/`.
 
 6. **Prove target code generation and ELF correctness.** Define and test the
    `spu-sony-ps3` target contract: SPU ISA, triple, data layout, calling

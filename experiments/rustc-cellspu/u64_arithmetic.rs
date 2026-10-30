@@ -59,6 +59,20 @@ impl Shr<u32> for u64 {
     }
 }
 
+#[lang = "bitand"]
+pub trait BitAnd<Rhs = Self> {
+    type Output;
+    fn bitand(self, rhs: Rhs) -> Self::Output;
+}
+
+impl BitAnd for u64 {
+    type Output = u64;
+
+    fn bitand(self, rhs: u64) -> u64 {
+        self & rhs
+    }
+}
+
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub fn add_u64(lhs: u64, rhs: u64) -> u64 {
@@ -89,4 +103,20 @@ pub fn borrow_word(lhs: u32, rhs: u32) -> u32 {
 #[unsafe(no_mangle)]
 pub fn high_word_difference() -> u32 {
     (sub_u64(0x1234_5678_9abc_def0, 0x1111_2222_3333_4444) >> 32) as u32
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+pub fn and_u64(lhs: u64, rhs: u64) -> u64 {
+    lhs & rhs
+}
+
+#[unsafe(no_mangle)]
+pub fn high_word_and() -> u32 {
+    (and_u64(0x1234_5678_9abc_def0, 0x0f0f_0f0f_f0f0_f0f0) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn low_word_and() -> u32 {
+    and_u64(0x1234_5678_9abc_def0, 0x0f0f_0f0f_f0f0_f0f0) as u32
 }

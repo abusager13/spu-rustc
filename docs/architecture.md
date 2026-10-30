@@ -41,12 +41,12 @@ the in-tree scalar translator remains a temporary validation harness.
 
 A custom stage1 rustc has now been built against the maintained LLVM port and
 used it to compile a minimal `#![no_core]` fixture directly to ELF32 big-endian
-`EM_SPU`. The fixture exercises `u32` addition and `u64` addition/subtraction;
-the LLVM encoder's `cg`, `addx`, `bg`, and `sfx` words match GNU SPU binutils,
-and the emulator checks six carry, borrow, and high-word results. This uses an
-experimental custom JSON target and PowerPC-named LLVM initializer aliases
-required by rustc's build glue. Rustc currently panics when this target uses
-`extern "C"` because it has no C ABI lowering for `arch = "spu"`; the tested
+`EM_SPU`. It exercises `u32` addition, `u64` addition/subtraction, and 64-bit
+bitwise AND. The LLVM encoder's `cg`, `addx`, `bg`, `sfx`, `and`, and `iohl`
+words match GNU SPU binutils; eight runtime results pass in the emulator. This
+uses an experimental custom JSON target and PowerPC-named LLVM initializer
+aliases required by rustc's build glue. Rustc currently panics when this target
+uses `extern "C"` because it has no C ABI lowering for `arch = "spu"`; the tested
 functions use Rust ABI. This integration proof does not build `core` or
 demonstrate ordinary `#![no_std]` support. See
 [`experiments/rustc-cellspu`](../experiments/rustc-cellspu/README.md).
