@@ -231,10 +231,14 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
     if (Name.starts_with("BRZ"))
       return Branch16(0x20000000, expressionOperand(MI), 0, true);
 
+    if (Name == "CBD")
+      return RI10(0x3e800000, 1, 2, 0, 7, 0);
     if (Name == "CHD")
       return RI10(0x3ea00000, 1, 2, 0, 7, 0);
     if (Name.starts_with("CWD"))
       return RI10(0x3ec00000, 1, 2, 0, 7, 0);
+    if (Name == "CDD" || Name == "CDDf64")
+      return RI10(0x3ee00000, 1, 2, 0, 7, 0);
     if (Name.starts_with("ILA"))
       return 0x42000000 | (immediate(MI, 1, 18) << 7) | reg(MI, 0);
     if (Name == "IOHLf32" || Name == "IOHLr32" ||

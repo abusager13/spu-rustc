@@ -222,6 +222,47 @@ pub unsafe extern "C" fn store_word(pointer: *mut u32, value: u32) {
 }
 
 #[unsafe(no_mangle)]
+pub unsafe extern "C" fn load_u8(pointer: *const u8) -> u8 {
+    unsafe { *pointer }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn load_i8(pointer: *const i8) -> i8 {
+    unsafe { *pointer }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn load_u16(pointer: *const u16) -> u16 {
+    unsafe { *pointer }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn load_i16(pointer: *const i16) -> i16 {
+    unsafe { *pointer }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn store_u8(pointer: *mut u8, value: u8) {
+    unsafe { *pointer = value; }
+}
+
+#[repr(C, packed)]
+pub struct PackedU16 {
+    _padding: u8,
+    value: u16,
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn load_packed_u16(pointer: *const PackedU16) -> u16 {
+    unsafe { (*pointer).value }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn store_packed_u16(pointer: *mut PackedU16, value: u16) {
+    unsafe { (*pointer).value = value; }
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn max_i16(lhs: i16, rhs: i16) -> i16 {
     if lhs > rhs { lhs } else { rhs }
 }
@@ -519,6 +560,77 @@ unsigned int gcc_compare_i64(void) {
 }
 C
 "$spu_cc" -O0 -c -o "$tmp/i64_compare_bridge.o" "$tmp/i64_compare_bridge.c"
+
+cat >"$tmp/narrow_memory_bridge.c" <<'C'
+extern unsigned char load_u8(const unsigned char *pointer);
+extern signed char load_i8(const signed char *pointer);
+extern unsigned short load_u16(const unsigned short *pointer);
+extern short load_i16(const short *pointer);
+extern void store_u8(unsigned char *pointer, unsigned char value);
+struct __attribute__((packed)) packed_u16 { unsigned char padding; unsigned short value; };
+extern unsigned short load_packed_u16(const struct packed_u16 *pointer);
+extern void store_packed_u16(struct packed_u16 *pointer, unsigned short value);
+
+unsigned int gcc_read_u8_samples(unsigned char *bytes) {
+    return ((unsigned int)load_u8(bytes) << 24) |
+           ((unsigned int)load_u8(bytes + 15) << 16) |
+           ((unsigned int)load_u8(bytes + 16) << 8) |
+           (unsigned int)load_u8(bytes + 31);
+}
+
+unsigned int gcc_read_i8_samples(signed char *bytes) {
+    unsigned int first = (unsigned int)(int)load_i8(bytes);
+    unsigned int second = (unsigned int)(int)load_i8(bytes + 2);
+    return (first << 16) | (second & 0xffff);
+}
+
+unsigned int gcc_read_u16_samples(unsigned char *bytes) {
+    return ((unsigned int)load_u16((unsigned short *)(bytes + 0)) << 16) |
+           (unsigned int)load_u16((unsigned short *)(bytes + 2));
+}
+
+unsigned int gcc_read_u16_tail(unsigned char *bytes) {
+    return ((unsigned int)load_u16((unsigned short *)(bytes + 14)) << 16) |
+           (unsigned int)load_u16((unsigned short *)(bytes + 30));
+}
+
+int gcc_read_i16_zero(unsigned char *bytes) {
+    return (int)load_i16((short *)(bytes + 0));
+}
+
+int gcc_read_i16_two(unsigned char *bytes) {
+    return (int)load_i16((short *)(bytes + 2));
+}
+
+int gcc_read_i16_tail(unsigned char *bytes) {
+    return (int)load_i16((short *)(bytes + 30));
+}
+
+unsigned int gcc_read_packed_u16(unsigned char *bytes) {
+    struct packed_u16 *packed = (struct packed_u16 *)(bytes + 14);
+    return (unsigned int)load_packed_u16(packed);
+}
+
+unsigned int gcc_store_u8_and_read_neighbors(unsigned char *bytes) {
+    store_u8(bytes + 5, 0xab);
+    return ((unsigned int)bytes[4] << 16) |
+           ((unsigned int)bytes[5] << 8) | bytes[6];
+}
+
+unsigned int gcc_store_packed_u16_and_read_neighbors(unsigned char *bytes) {
+    struct packed_u16 *packed = (struct packed_u16 *)(bytes + 14);
+    store_packed_u16(packed, 0xcdef);
+    return ((unsigned int)bytes[14] << 24) |
+           ((unsigned int)bytes[15] << 16) |
+           ((unsigned int)bytes[16] << 8) | bytes[17];
+}
+
+unsigned int gcc_read_packed_u16_after_store(unsigned char *bytes) {
+    struct packed_u16 *packed = (struct packed_u16 *)(bytes + 14);
+    return (unsigned int)load_packed_u16(packed);
+}
+C
+"$spu_cc" -O0 -c -o "$tmp/narrow_memory_bridge.o" "$tmp/narrow_memory_bridge.c"
 
 python3 - "$tmp/stack_arg_bridge.c" <<'PY'
 from pathlib import Path
@@ -890,6 +1002,39 @@ _start:
   wrch $ch28, $3
   brsl $lr, gcc_compare_i64
   wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_u8_samples
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_i8_samples
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_u16_samples
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_u16_tail
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_i16_zero
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_i16_two
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_i16_tail
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_packed_u16
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_store_u8_and_read_neighbors
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_store_packed_u16_and_read_neighbors
+  wrch $ch28, $3
+  ila $3, narrow_fixture
+  brsl $lr, gcc_read_packed_u16_after_store
+  wrch $ch28, $3
   stop 0
 .data
 .p2align 4
@@ -898,6 +1043,12 @@ fixture:
   .long 0x22222222
   .long 0x33333333
   .long 0x44444444
+.p2align 4
+narrow_fixture:
+  .byte 0x80, 0x7f, 0xff, 0x01, 0x12, 0x34, 0xfe, 0xdc
+  .byte 0x00, 0x80, 0x55, 0xaa, 0xf0, 0x0f, 0x13, 0x37
+  .byte 0x68, 0x24, 0x9a, 0xbc, 0xde, 0xf0, 0x11, 0x22
+  .byte 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa
 ASM
 
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O0 \
@@ -1022,7 +1173,7 @@ done
 "$spu_as" -o "$tmp/start.o" "$tmp/start.s"
 "$spu_ld" -e _start -o "$tmp/scalar.elf" \
     "$tmp/start.o" "$tmp/abi_bridge.o" "$tmp/stack_arg_bridge.o" \
-    "$tmp/i64_compare_bridge.o" \
+    "$tmp/i64_compare_bridge.o" "$tmp/narrow_memory_bridge.o" \
     "$tmp/scalar.o" "$tmp/optimized_loop.o" "$tmp/stack_args.o" \
     "$tmp/dynamic_shift.o"
 
@@ -1072,10 +1223,12 @@ expected+=00001234
 expected+=369d0368fffffffc
 expected+=00000011000000200000001f00000008000000200000000d000000200000000000000008000000200000000400000020345678127812345678563412
 expected+=00055555
-if [[ "$byte_count" != 368 || "$actual" != "$expected" ]]; then
+expected+=803768aaff80ffff807fff01133799aaffff807fffffff01ffff99aa
+expected+=000037680012abfe13cdef240000cdef
+if [[ "$byte_count" != 412 || "$actual" != "$expected" ]]; then
     cat "$tmp/emulator.log" >&2
     echo "expected mailbox words $expected; got ${actual:-<empty>} ($byte_count bytes)" >&2
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic, 64-bit comparisons, byte-swap, shifts, rotates, bit-count, branch, loop, call, stack-argument ABI, and pointer-memory subset: direct LLVM ELF32 EM_SPU objects; emulator returned ninety-two expected words and reached stop\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic, 64-bit comparisons, narrow memory accesses, byte-swap, shifts, rotates, bit-count, branch, loop, call, stack-argument ABI, and pointer-memory subset: direct LLVM ELF32 EM_SPU objects; emulator returned one hundred three expected words and reached stop\n'

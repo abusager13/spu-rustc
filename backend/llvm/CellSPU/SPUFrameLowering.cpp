@@ -15,6 +15,7 @@
 #include "SPU.h"
 #include "SPUInstrBuilder.h"
 #include "SPUInstrInfo.h"
+#include "SPUMachineFunction.h"
 #include "SPUSubtarget.h"
 #include "llvm/IR/Function.h"
 #include "llvm/CodeGen/MachineFrameInfo.h"
@@ -28,6 +29,27 @@
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Alignment.h"
 using namespace llvm;
+
+namespace {
+bool requiresStackFrame(const MachineFunction &MF) {
+  const MachineFrameInfo &MFI = MF.getFrameInfo();
+  if (MFI.getStackSize() > 16 || MFI.adjustsStack())
+    return true;
+
+  // The target reserves one 16-byte scavenger slot in every function. A
+  // spill into that slot still needs a real frame: without one, its $sp-based
+  // address aliases the caller's locals and outgoing arguments.
+  const SPUFunctionInfo *FuncInfo = MF.getInfo<SPUFunctionInfo>();
+  for (const MachineBasicBlock &MBB : MF)
+    for (const MachineInstr &MI : MBB)
+      for (const MachineOperand &MO : MI.operands())
+        if (MO.isFI() &&
+            !FuncInfo->isIncomingArgFrameIndex(MO.getIndex()))
+          return true;
+
+  return false;
+}
+} // namespace
 
 //===----------------------------------------------------------------------===//
 // SPUFrameLowering:
@@ -116,8 +138,8 @@ void SPUFrameLowering::emitPrologue(MachineFunction &MF,
   assert((FrameSize & 0xf) == 0
          && "SPURegisterInfo::emitPrologue: FrameSize not aligned");
 
-  // the "empty" frame size is 16 - just the register scavenger spill slot
-  if (FrameSize > 16 || MFI->adjustsStack()) {
+  // The 16-byte scavenger slot needs a frame only when code actually uses it.
+  if (requiresStackFrame(MF)) {
     FrameSize = -(FrameSize + SPUFrameLowering::minStackSize());
     // Adjust stack pointer, spilling $lr -> 16($sp) and $sp -> -FrameSize($sp)
     // for the ABI
@@ -170,8 +192,8 @@ void SPUFrameLowering::emitEpilogue(MachineFunction &MF,
          "Can only insert epilog into returning blocks");
   assert((FrameSize & 0xf) == 0 && "FrameSize not aligned");
 
-  // the "empty" frame size is 16 - just the register scavenger spill slot
-  if (FrameSize > 16 || MFI->adjustsStack()) {
+  // The 16-byte scavenger slot needs a frame only when code actually uses it.
+  if (requiresStackFrame(MF)) {
     FrameSize = FrameSize + SPUFrameLowering::minStackSize();
     if (isInt<10>(FrameSize + LinkSlotOffset)) {
       // Reload $lr, adjust $sp by required amount

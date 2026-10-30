@@ -744,6 +744,15 @@ LowerLOAD(SDValue Op, SelectionDAG &DAG, const SPUSubtarget *ST) {
                           DAG.getNode(ISD::OR, dl, MVT::i128, low, high));
 
     if (!InVT.isVector()) {
+      // The merged bytes start at the low end of the vector. Move a narrow
+      // scalar into its preferred register slot before reinterpreting it as a
+      // scalar register; aligned single-quadword loads do this in ROTATE above.
+      if (pso != 0) {
+        SDValue bits = DAG.getNode(ISD::BITCAST, dl, MVT::i128, result);
+        bits = DAG.getNode(SPUISD::ROTBYTES_LEFT, dl, MVT::i128, bits,
+                           DAG.getConstant(16 - pso, dl, MVT::i16));
+        result = DAG.getNode(ISD::BITCAST, dl, vecVT, bits);
+      }
       result = DAG.getNode(SPUISD::VEC2PREFSLOT, dl, InVT, result );
      }
 
@@ -917,8 +926,10 @@ LowerSTORE(SDValue Op, SelectionDAG &DAG, const SPUSubtarget *ST) {
 
     SDValue insertEltOp = DAG.getNode(SPUISD::SHUFFLE_MASK, dl, vecVT,
                                       insertEltOffs);
-    SDValue vectorizeOp = DAG.getNode(ISD::SCALAR_TO_VECTOR, dl, vecVT,
-                                      theValue);
+    SDValue vectorizeOp =
+        StVT.isVector()
+            ? theValue
+            : DAG.getNode(SPUISD::PREFSLOT2VEC, dl, vecVT, theValue);
 
     result = DAG.getNode(SPUISD::SHUFB, dl, vecVT,
                          vectorizeOp, low,
@@ -961,6 +972,11 @@ LowerSTORE(SDValue Op, SelectionDAG &DAG, const SPUSubtarget *ST) {
     // this is e.g. in the case of store i32, align 2
     if (!VT.isVector()){
       Value = DAG.getNode(SPUISD::PREFSLOT2VEC, dl, vecVT, Value);
+      if (StVT.getSizeInBits() == 8 || StVT.getSizeInBits() == 16) {
+        unsigned Rotate = StVT.getSizeInBits() == 8 ? 13 : 14;
+        Value = DAG.getNode(SPUISD::ROTBYTES_LEFT, dl, vecVT, Value,
+                            DAG.getConstant(Rotate, dl, MVT::i16));
+      }
       lowmask = DAG.getNode(SPUISD::SRL_BYTES, dl, MVT::i128, ones, surplus);
       lowmask = DAG.getNode(SPUISD::SHL_BYTES, dl, MVT::i128, lowmask,
                                                                surplus);

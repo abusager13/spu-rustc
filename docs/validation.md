@@ -733,3 +733,19 @@ physical hardware.
   `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 76 unit tests and six
   end-to-end tests. This still does not build SPU `core` or provide a supported
   `rustc --target=spu` target.
+- Extended the maintained LLVM backend emulator fixture with signed and
+  unsigned `i8` and `i16` loads, `u8` and `u16` loads at block edges, a `u8`
+  store, and a packed `u16` load/store crossing a 16-byte boundary. Added the
+  missing `CBD` machine encoding. The caller verifies changed bytes and
+  preserved neighbors. This exposed a frame-lowering bug: a function spill
+  could use the reserved slot without allocating a frame and overwrite the
+  caller's saved pointer. The CellSPU frame lowering now allocates a frame
+  when local frame indices are used, while leaving the unused reserved slot
+  alone.
+- Rebuilt LLVM 23.1.1 `llc`. `scripts/test-llvm-cellspu-backend.sh` passed all
+  103 emulator mailbox words, including the narrow and cross-boundary memory
+  cases, and reached `stop`. `scripts/test-rustc-cellspu.sh` again passed its
+  `#![no_core]` addition, 88 arithmetic and shift results, and four 64-bit
+  products. `SPU_REQUIRE_E2E=1 cargo test --offline` passed all 76 unit and six
+  end-to-end tests. Ordinary `#![no_std]` support, SPU `core`, and PPU loading
+  remain unimplemented.

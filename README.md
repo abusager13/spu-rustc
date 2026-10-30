@@ -71,12 +71,16 @@ negate, bitwise-and, and `clz` instructions, returning 32 for zero.
 `leading_ones` and `trailing_ones` count through a bitwise complement before
 using the leading- or trailing-zero sequence. `count_ones` uses SPU `cntb`,
 `sumb`, and `xshw` instructions.
-Aligned `*const u32` and `*mut u32` parameters can read and write local-store
-words. Loads use `lqd` and `rotqby`; stores use `lqd`, `cwd`, `shufb`, and
-`stqd` to replace one word while preserving the other bytes in its quadword.
-Stores currently require a named `i32` value; constant-only stores, pointer
-arithmetic, other access widths, and other memory operations remain
-unsupported.
+The experimental translator's memory support is limited to aligned
+`*const u32` and `*mut u32` parameters that read and write local-store words.
+Loads use `lqd` and `rotqby`; stores use `lqd`, `cwd`, `shufb`, and `stqd` to
+replace one word while preserving the other bytes in its quadword. Its stores
+currently require a named `i32` value; constant-only stores, pointer arithmetic,
+other access widths, and other memory operations remain unsupported.
+Separately, the maintained LLVM backend's smoke suite exercises Rust `u8`,
+`i8`, `u16`, and `i16` loads, a `u8` store, and a packed `u16` load/store whose
+field crosses a 16-byte boundary. Those cases check local-store bytes through a
+GCC caller and the emulator; they do not establish general memory semantics.
 `wrapping_abs` builds a sign mask with `rotmai`, then uses XOR and subtraction;
 it preserves `i32::MIN` with wrapping semantics.
 Signed and unsigned `min`/`max` use the corresponding SPU compare and `selb`
@@ -108,9 +112,9 @@ comparison branch predicates to native SPU code, with both outcomes checked.
 Its smoke fixture also checks twenty `i64` equality, inequality, signed, and
 unsigned comparisons through the CellSPU backend.
 A GCC-compiled caller also verifies signed and
-unsigned 16-bit return values across the SPU C ABI. Its memory smoke case
-stores one word through a raw pointer and confirms the other words in the same
-local-store quadword are preserved. A separate `-O1` loop with loop-carried
+unsigned 16-bit return values across the SPU C ABI. The LLVM memory smoke cases
+check narrow scalar loads and stores, including a packed halfword crossing a
+quadword boundary, through raw pointers. A separate `-O1` loop with loop-carried
 `phi` values and a helper call is checked for inputs 0, 1, 2, 5, and 10. The
 smoke check also verifies the 73rd `u32` argument from GCC into Rust, through a
 Rust-generated forwarding call, and in a direct Rust call with constant
