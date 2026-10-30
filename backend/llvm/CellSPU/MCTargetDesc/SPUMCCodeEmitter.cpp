@@ -165,10 +165,41 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RR(0x0b000000);
     if (Name.starts_with("SHLI"))
       return RI10(0x0f600000, 2, 1, 0, 7, 0);
+    if (Name.starts_with("SHLQBII"))
+      return RI10(0x3f600000, 2, 1, 0, 7, 0);
+    if (Name.starts_with("SHLQBYI"))
+      return RI10(0x3fe00000, 2, 1, 0, 7, 0);
+    if (Name.starts_with("FSMBI"))
+      return 0x32800000 | (immediate(MI, 1, 16) << 7) | reg(MI, 0);
+    if (Name == "FSMv4i32" || Name == "FSMr32" || Name == "FSMr16" ||
+        Name.starts_with("FSM64"))
+      return 0x36800000 | (reg(MI, 1) << 7) | reg(MI, 0);
+    if (Name.starts_with("SELB"))
+      return RRR(0x80000000);
     if (Name.starts_with("ROTMAI"))
       return RI7Neg(0x0f400000, 2, 1, 0);
     if (Name.starts_with("ROTMI"))
       return RI7Neg(0x0f200000, 2, 1, 0);
+    if (Name.starts_with("ROTQMBYI"))
+      return RI7Neg(0x3fa00000, 2, 1, 0);
+    if (Name.starts_with("ROTQMBII"))
+      return RI7Neg(0x3f200000, 2, 1, 0);
+    if (Name.starts_with("ROTQMBY"))
+      return RR(0x3ba00000);
+    if (Name.starts_with("ROTQMBI"))
+      return RR(0x3b200000);
+    if (Name.starts_with("ROTQBYBI"))
+      return RR(0x39800000);
+    if (Name.starts_with("ROTQBYI"))
+      return RI10(0x3f800000, 2, 1, 0, 7, 0);
+    if (Name.starts_with("ROTQBII"))
+      return RI10(0x3f000000, 2, 1, 0, 7, 0);
+    if (Name.starts_with("ROTQBI"))
+      return RR(0x3b000000);
+    if (Name.starts_with("SHLQBI"))
+      return RR(0x3b600000);
+    if (Name.starts_with("SHLQBY"))
+      return RR(0x3be00000);
     if (Name.starts_with("ROTQBY"))
       return RR(0x3b800000);
     if (Name.starts_with("SHUFB"))

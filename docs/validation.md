@@ -586,6 +586,31 @@ in this repository.
    target call-convention layer, which runs before LLVM, is a required next
    integration step; choosing a different ABI or skipping the type would not
    establish a correct target.
+67. Extended the direct-rustc `#![no_core]` fixture to compile constant and
+   variable `u64` left shifts through the maintained CellSPU LLVM
+   backend. The LLVM selector already formed the sequences, but the MC encoder
+   lacked `fsmbi`, `selb`, `shlqby`, `shlqbi`, `shlqbyi`, and `shlqbii` encodings.
+   Added those plus encoding comparisons for `andi` and `rotmi`.
+   `scripts/test-rustc-cellspu.sh`
+   compares these instruction words with GNU SPU binutils, links the ELF, and
+   checks 38 mailbox values in the emulator. Variable counts 0, 1, 7, 8, 31,
+   32, 40, 63, 64, and 65 all produced the expected high and low words; counts
+   64 and 65 verify count masking. A constant shift by 13 also passes. The
+   wrapper passes three distinct `u64` values in registers at runtime; only
+   those input patterns are covered. This still uses Rust ABI and an
+   experimental target JSON and does not build `core` or ordinary `#![no_std]`
+   crates.
+68. Extended the same direct-rustc fixture with unsigned `u64` logical-right
+   shifts and signed `i64` arithmetic-right shifts, both with variable counts
+   and with a constant shift by 13. The maintained MC encoder gained the
+   `rotqmby`, `rotqmbi`, `rotqmbyi`, `rotqmbii`, `fsm`, `rotqbybi`, `rotqbi`,
+   `rotqbyi`, and `rotqbii` encodings needed by the selector. The script
+   reassembles each selected instruction form with GNU SPU binutils and checks
+   all emitted encodings byte for byte. The emulator now checks 88 total
+   mailbox results: 50 more than the left-shift milestone, including negative
+   signed inputs, positive signed values, counts 0, 1, 7, 8, 31, 32, 40, 63,
+   64, and 65, and masked counts 64 and 65. The experiment remains `#![no_core]`, uses Rust
+   ABI and an experimental target JSON, and does not build `core`.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
@@ -644,20 +669,24 @@ physical hardware.
   was tested.
 
 - Rebuilt the maintained LLVM 23.1.1 CellSPU backend and custom rustc 1.99.1
-  stage1 compiler after adding MC encodings for `cg`, `addx`, `bg`, `sfx`, and
-  `iohl`, plus direct 64-bit AND support and corrected subtraction operand
-  order. Rustc's build glue expects PowerPC LLVM initializer names and a
-  `powerpc` component, so this build uses opt-in CellSPU initializer aliases
+  stage1 compiler after adding MC encodings for `cg`, `addx`, `bg`, `sfx`,
+  `iohl`, and the 64-bit left and right shift sequences, plus direct 64-bit AND
+  support and corrected subtraction operand order. Rustc's build glue expects PowerPC
+  LLVM initializer names and a `powerpc` component, so this build uses opt-in
+  CellSPU initializer aliases
   and `scripts/llvm-config-cellspu-rustc.sh`; the aliases initialize CellSPU
   only. The Rust source checkout was left unchanged.
 - Ran `scripts/test-rustc-cellspu.sh` with that custom rustc, GNU SPU binutils,
   and the pinned `anergistic` emulator. Rustc directly emitted ELF32
   big-endian `EM_SPU` objects from a minimal `#![no_core]` fixture for `u32`
-  addition, `u64` addition/subtraction, and 64-bit bitwise AND. The tested
-  instruction words match GNU SPU assembler output byte for byte. The linked
-  emulator wrapper checked eight results (`1`, `0`, `0x2345789a`, `0xffffffff`,
-  `0`, `0x01233456`, `0x02040608`, and `0x90b0d0f0`) and reached `stop`. The
-  fixture uses Rust ABI; rustc still panics on `extern "C"` for this
+  addition, `u64` addition/subtraction, 64-bit bitwise AND, and constant and
+  variable `u64` left and logical-right shifts, plus signed `i64`
+  arithmetic-right shifts.
+  Tested carry, borrow, logic, immediate, mask, rotate, and shift encodings
+  match GNU SPU assembler output byte for byte. The linked emulator wrapper
+  checked 88 results, including variable counts 0, 1, 7, 8, 31, 32, 40, 63, 64,
+  and 65, constant shifts by 13, and signed and unsigned values; it reached
+  `stop`. The fixture uses Rust ABI; rustc still panics on `extern "C"` for this
   experimental `arch = "spu"` target.
 - Attempted Cargo's `-Z build-std=core` path with the custom target and a router
   that uses the host rustc for build scripts. Cargo reached the real `core`

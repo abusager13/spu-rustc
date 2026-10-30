@@ -71,11 +71,16 @@ helper call, plus unsafe raw-pointer `u32` loads and stores:
 In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
 from a minimal `#![no_core]` fixture with `u32` addition, `u64`
-addition/subtraction, and 64-bit bitwise AND. The generated `cg`, `addx`,
-`bg`, `sfx`, `and`, and `iohl` encodings match GNU SPU binutils byte for byte.
-A small SPU entry wrapper exercises carry, borrow, high-word, and both bitwise
-result words; all eight mailbox values pass in the emulator. The probe uses an
-experimental custom target JSON, Rust ABI, and narrowly scoped
+addition/subtraction, 64-bit bitwise AND, constant and variable `u64` left and
+logical-right shifts, and signed `i64` arithmetic-right shifts. The generated carry,
+borrow, select-mask, rotate, and quadword shift encodings match GNU SPU binutils
+byte for byte.
+A small SPU entry wrapper exercises carry, borrow, high-word, bitwise, and
+left- and right-shift results; all 88 mailbox values pass in the emulator.
+Variable shift counts are 0, 1, 7, 8, 31, 32, 40, 63, 64, and 65. The test
+also covers sign extension for negative values, positive signed values,
+additional runtime `u64` inputs, and constant shifts by 13. The
+probe uses an experimental custom target JSON, Rust ABI, and narrowly scoped
 initializer/component aliases for rustc's build glue. It does not build or use
 `core`, does not show ordinary `#![no_std]` support, and does not make this a
 supported in-tree rustc target. Run it with
@@ -113,11 +118,12 @@ cmake --build /path/to/llvm-build --target llc -j6
 
 The larger smoke check starts with Rust source, but invokes host `rustc` first
 and then retargets its LLVM IR with a separate `llc` command. The direct-rustc
-probe covers only `u32` addition, `u64` addition/subtraction, and 64-bit
-bitwise AND in a `#![no_core]` fixture with hand-written minimal lang items.
-Together, they do not demonstrate ordinary `#![no_std]` code through rustc for
-SPU or a supported `rustc --target=spu` workflow. This repository still has no maintained Rust
-target specification integrated into the rustc source tree. A Cargo
+probe covers only `u32` addition, `u64` addition/subtraction, 64-bit bitwise
+AND, and constant and variable 64-bit shifts in a `#![no_core]` fixture with
+hand-written minimal lang items. Together, they do not demonstrate ordinary
+`#![no_std]` code through rustc for SPU or a supported `rustc --target=spu`
+workflow. This repository still has no
+maintained Rust target specification integrated into the rustc source tree. A Cargo
 `build-std` probe reaches `core`, then rustc panics while computing the C ABI
 for `core::ffi::VaList` because `arch = "spu"` has no foreign-ABI lowering.
 This project does not yet provide the rustc-side ABI support needed to build

@@ -16,6 +16,7 @@ pub trait Copy: Sized {}
 
 impl Copy for u32 {}
 impl Copy for u64 {}
+impl Copy for i64 {}
 
 #[lang = "add"]
 pub trait Add<Rhs = Self> {
@@ -56,6 +57,28 @@ impl Shr<u32> for u64 {
 
     fn shr(self, rhs: u32) -> u64 {
         self >> rhs
+    }
+}
+
+impl Shr<u32> for i64 {
+    type Output = i64;
+
+    fn shr(self, rhs: u32) -> i64 {
+        self >> rhs
+    }
+}
+
+#[lang = "shl"]
+pub trait Shl<Rhs = Self> {
+    type Output;
+    fn shl(self, rhs: Rhs) -> Self::Output;
+}
+
+impl Shl<u32> for u64 {
+    type Output = u64;
+
+    fn shl(self, rhs: u32) -> u64 {
+        self << rhs
     }
 }
 
@@ -119,4 +142,110 @@ pub fn high_word_and() -> u32 {
 #[unsafe(no_mangle)]
 pub fn low_word_and() -> u32 {
     and_u64(0x1234_5678_9abc_def0, 0x0f0f_0f0f_f0f0_f0f0) as u32
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+pub fn shl_u64(value: u64, amount: u32) -> u64 {
+    value << amount
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_high(amount: u32) -> u32 {
+    (shl_u64(0x8123_4567_89ab_cdef, amount) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_low(amount: u32) -> u32 {
+    shl_u64(0x8123_4567_89ab_cdef, amount) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_high_value(value: u64, amount: u32) -> u32 {
+    (shl_u64(value, amount) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_low_value(value: u64, amount: u32) -> u32 {
+    shl_u64(value, amount) as u32
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+pub fn shl_u64_by_13(value: u64) -> u64 {
+    value << 13
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_high_by_13(value: u64, _amount: u32) -> u32 {
+    (shl_u64_by_13(value) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_low_by_13(value: u64, _amount: u32) -> u32 {
+    shl_u64_by_13(value) as u32
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+pub fn shr_u64(value: u64, amount: u32) -> u64 {
+    value >> amount
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_right_high(value: u64, amount: u32) -> u32 {
+    (shr_u64(value, amount) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_right_low(value: u64, amount: u32) -> u32 {
+    shr_u64(value, amount) as u32
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+pub fn shr_u64_by_13(value: u64) -> u64 {
+    value >> 13
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_right_high_by_13(value: u64, _amount: u32) -> u32 {
+    (shr_u64_by_13(value) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_right_low_by_13(value: u64, _amount: u32) -> u32 {
+    shr_u64_by_13(value) as u32
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+pub fn shr_i64(value: i64, amount: u32) -> i64 {
+    value >> amount
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_arithmetic_high(value: i64, amount: u32) -> u32 {
+    (shr_i64(value, amount) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_arithmetic_low(value: i64, amount: u32) -> u32 {
+    shr_i64(value, amount) as u32
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+pub fn shr_i64_by_13(value: i64) -> i64 {
+    value >> 13
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_arithmetic_high_by_13(value: i64, _amount: u32) -> u32 {
+    (shr_i64_by_13(value) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn shift_arithmetic_low_by_13(value: i64, _amount: u32) -> u32 {
+    shr_i64_by_13(value) as u32
 }
