@@ -1238,9 +1238,8 @@ ASM
     -o "$tmp/dynamic_shift_large.o"
 
 # Build the same instruction streams through LLVM's text printer and GNU's
-# assembler. Compare disassembly to cross-check the direct MC encodings; HBRA
-# hints are deliberately ignored because the direct emitter currently writes
-# an LNOP in their slots.
+# assembler. Compare disassembly to cross-check the direct MC encodings while
+# filtering LNOP filler slots; branch-hint instructions are compared directly.
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O0 \
     -verify-machineinstrs -filetype=asm "$tmp/scalar-spu.ll" -o "$tmp/scalar.s"
 "$spu_as" -o "$tmp/scalar-asm.o" "$tmp/scalar.s"
@@ -1267,9 +1266,9 @@ compare_direct_and_gnu_encoding() {
     local direct_disassembly
     local gnu_disassembly
     direct_disassembly=$("$spu_objdump" -dr "$tmp/$name.o" | \
-        sed -E '/file format/d; /[[:space:]](lnop|hbra)([[:space:]]|$)/d; /SPU_ADDR16[[:space:]]+\.text/d')
+        sed -E '/file format/d; /[[:space:]]lnop([[:space:]]|$)/d; /SPU_ADDR16[[:space:]]+\.text/d')
     gnu_disassembly=$("$spu_objdump" -dr "$tmp/$name-asm.o" | \
-        sed -E '/file format/d; /[[:space:]](lnop|hbra)([[:space:]]|$)/d; /SPU_ADDR16[[:space:]]+\.text/d')
+        sed -E '/file format/d; /[[:space:]]lnop([[:space:]]|$)/d; /SPU_ADDR16[[:space:]]+\.text/d')
     if [[ "$direct_disassembly" != "$gnu_disassembly" ]]; then
         diff -u <(printf '%s\n' "$direct_disassembly") \
                 <(printf '%s\n' "$gnu_disassembly") >&2 || true

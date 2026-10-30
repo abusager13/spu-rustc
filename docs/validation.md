@@ -774,3 +774,9 @@ physical hardware.
   backend image still passes all 116 results. This exercises one large-memory
   static-pointer path; it does not validate every large-memory access or the
   full relocation set.
+- Replaced the CellSPU MC emitter's `HBRA` no-op with a native branch-hint
+  encoding. Its local branch-instruction field uses a PC-relative word offset,
+  while the hinted target uses `R_SPU_ADDR16`. The direct LLVM object now
+  matches GNU `spu-as` for the optimized-loop branch hint, and the emulator
+  still passes all 116 main results. This validates encoding and execution,
+  not a performance benefit from the hint.

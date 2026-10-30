@@ -37,6 +37,8 @@ public:
       return SPU::R_SPU_ADDR16_HI;
     case SPU::fixup_spu_addr16_lo:
       return SPU::R_SPU_ADDR16_LO;
+    case SPU::fixup_spu_hbra:
+      llvm_unreachable("CellSPU HBRA instruction address must resolve locally");
     case FK_Data_4:
       return IsPCRel ? SPU::R_SPU_REL32 : SPU::R_SPU_ADDR32;
     default:

@@ -183,16 +183,16 @@ The object writer also maps `R_SPU_REL32`, but no LLVM-generated fixture
 currently exercises it. This work does not implement or validate the full SPU
 instruction encoder or relocation set.
 High/low symbol relocations are tested for the address sequence selected by
-`+large_mem`, with the pointer linked at `0x10000`. This does not validate
+`+large_mem`, with the pointer linked at `0x10010`. This does not validate
 arbitrary global addressing or all large-memory code paths.
-Branch-hint `HBRA` instructions currently occupy their instruction slot as an
-SPU no-op, so branch prediction hints are dropped. Unsupported instruction
-forms can still fail object emission. The tested variable shifts explicitly
-mask counts in Rust; this does not validate other shift-count or overflow
-semantics. The smoke script also sends the tested
+The smoke script compares emitted `HBRA` branch hints against GNU SPU
+disassembly. It validates the tested encoding, not the hints' performance
+effect. Unsupported instruction forms can still fail object emission. The
+tested variable shifts explicitly mask counts in Rust; this does not validate
+other shift-count or overflow semantics. The smoke script also sends the tested
 instruction streams through LLVM's assembly printer and GNU `spu-as`, then
-compares disassembly; the direct encodings match after excluding the deliberately
-dropped branch hints. GNU SPU binutils remain the linker and ABI reference. Do
+compares disassembly after filtering LNOP filler slots. GNU SPU binutils remain
+the linker and ABI reference. Do
 not treat the translator's larger emulator coverage as coverage of this LLVM
 backend.
 
@@ -206,7 +206,7 @@ specified and tested.
 ## Next backend work
 
 1. Expand the MC emitter and relocation coverage and validate it against GNU
-   SPU binutils, including branch hints and additional object forms.
+   SPU binutils, including additional relocation types and object forms.
 2. Add fixtures for more branch predicates, loop shapes, merge/phi cases,
    calls, and ABI cases, with disassembly and emulator checks.
 3. Replace the minimal rustc initializer bridge with maintained target

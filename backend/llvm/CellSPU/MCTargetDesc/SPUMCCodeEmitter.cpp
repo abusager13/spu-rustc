@@ -264,9 +264,15 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
     }
     if (Name.starts_with("IL"))
       return (0x40800000 | (immediate(MI, 1, 16) << 7) | reg(MI, 0));
-    if (Name == "LNOP" || Name == "HBRA")
-      // Branch hints do not change program semantics. Preserve their slot as
-      // an SPU load-pipeline no-op until their two target fixups are modeled.
+    if (Name == "HBRA") {
+      uint32_t BranchWordAddress = immediateOrFixup(
+          MI, 0, 9, SPU::fixup_spu_hbra, true, Fixups);
+      uint32_t Target = immediateOrFixup(MI, 1, 16,
+                                         SPU::fixup_spu_addr16, false, Fixups);
+      return 0x10000000 | (Target << 7) | (BranchWordAddress & 0x7fU) |
+             ((BranchWordAddress & 0x180U) << 16);
+    }
+    if (Name == "LNOP")
       return 0x00200000;
     if (Name == "ENOP")
       return 0x40200000;

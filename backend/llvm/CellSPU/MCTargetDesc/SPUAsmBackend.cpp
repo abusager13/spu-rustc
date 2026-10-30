@@ -34,6 +34,7 @@ public:
         {"fixup_spu_addr18", 7, 18, 0},
         {"fixup_spu_addr16_hi", 7, 16, 0},
         {"fixup_spu_addr16_lo", 7, 16, 0},
+        {"fixup_spu_hbra", 0, 9, 0},
     };
     if (Kind < FirstTargetFixupKind)
       return MCAsmBackend::getFixupKindInfo(Kind);
@@ -46,6 +47,9 @@ public:
   void applyFixup(const MCFragment &Fragment, const MCFixup &Fixup,
                   const MCValue &Target, uint8_t *Data, uint64_t Value,
                   bool IsResolved) override {
+    if (Fixup.getKind() == SPU::fixup_spu_hbra && !IsResolved)
+      report_fatal_error(
+          "CellSPU HBRA branch instruction address must resolve locally");
     maybeAddReloc(Fragment, Fixup, Target, Value, IsResolved);
     if (!IsResolved)
       return;
@@ -55,6 +59,7 @@ public:
         Fixup.getKind() != SPU::fixup_spu_addr18 &&
         Fixup.getKind() != SPU::fixup_spu_addr16_hi &&
         Fixup.getKind() != SPU::fixup_spu_addr16_lo &&
+        Fixup.getKind() != SPU::fixup_spu_hbra &&
         Fixup.getKind() != FK_Data_4)
       report_fatal_error("unsupported CellSPU fixup kind");
 
@@ -63,6 +68,16 @@ public:
     uint8_t *Location = Data;
     if (Fixup.getKind() == FK_Data_4) {
       support::endian::write32be(Location, static_cast<uint32_t>(Value));
+      return;
+    }
+
+    if (Fixup.getKind() == SPU::fixup_spu_hbra) {
+      uint32_t BranchWordAddress =
+          (static_cast<uint32_t>(Value >> 2)) & 0x1ffU;
+      uint32_t Word = support::endian::read32be(Location);
+      Word = (Word & ~0x0180007fU) | (BranchWordAddress & 0x7fU) |
+             ((BranchWordAddress & 0x180U) << 16);
+      support::endian::write32be(Location, Word);
       return;
     }
 
