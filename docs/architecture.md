@@ -157,32 +157,89 @@ instructions and aligns functions to 8 bytes. The prototype follows those
 observed scheduling and alignment conventions for its limited instruction set;
 it does not yet implement a general SPU instruction scheduler.
 
-## Provisional long-term direction
+## Long-term direction and feature layers
 
-The strongest path toward an ordinary `rustc` target is to port and modernize
-the historical CellSPU LLVM backend, then add a Rust target spec that maps
-`spu-sony-ps3` to LLVM's `spu`/`cellspu` architecture. This reuses the existing
-instruction descriptions, ABI rules, object support, and old regression tests
-while preserving Rust's mature parser, type checker, MIR, and `core` build
-pipeline. The 2012 backend is only a reference: it needs API porting, modern
-LLVM integration, tests against current SPU binutils, and completion of its
-documented gaps.
+The foundational route toward an ordinary `rustc` target is to port and
+maintain LLVM's historical CellSPU backend, then add a Rust target spec that
+maps `spu-sony-ps3` to LLVM's `spu`/`cellspu` architecture. This reuses the
+existing instruction descriptions, ABI rules, object support, and regression
+tests while preserving Rust's parser, type checker, MIR, and `core` build
+pipeline. The target, its data layout and ABI, native SPU ELF output, and a
+verified PPU launch path come before target-specific safe libraries or task
+runtimes. The initial target should use `panic=abort`; the historical backend
+declares no exception support, so unwinding must remain unsupported until it
+has a separately validated implementation.
 
-The current prototype deliberately does not try to masquerade as that backend.
-The GNU SPU toolchain remains the tested assembler/linker and ABI oracle. The
-legacy GCC adapter now has a two-function experimental end-to-end result, but
-it still needs a maintained Rust/GCC pairing, a real SPU target specification,
-compatible APIs without no-op shims, and complete Rust ABI and data-layout
-validation before it could become a project backend. The scalar prototype
-remains the only Rust-to-SPU path integrated and maintained in this
-repository.
+### Compiler guarantees and hardware facts
 
-The target-specific Rust API will also need to distinguish local-store
-addresses from PPU effective addresses for DMA. The available SPU GCC install
-includes `spu_intrinsics.h` and `spu_mfcio.h` as references for the MFC,
-mailbox, and SIMD interfaces; they are not Rust APIs in this prototype.
-The old backend declares no exception support; a Rust target should initially
-use `panic=abort` and must not claim unwinding support.
+Rust ownership, borrowing, and lifetimes can check relationships represented
+in Rust types. They do not make the compiler aware of Cell hardware state, do
+not automatically track an MFC transfer, and do not prove that a PPU effective
+address is mapped or that a DMA request has completed. A safe API can provide
+stronger guarantees only when its implementation correctly models these facts
+and prevents callers from bypassing the model. Hardware facts that cannot be
+established statically may require runtime checks or an explicit `unsafe`
+operation.
+
+In particular, local-store addresses and PPU effective addresses must remain
+distinct concepts. A future safe DMA wrapper could own or borrow an aligned
+buffer during a transfer, represent the in-flight state, and return access
+only after completion is observed. These are design examples, not guarantees
+provided by Rust or APIs implemented by the current prototype. Mailbox,
+synchronization, and PPU–SPU communication wrappers need equivalent contracts
+for ordering, ownership, and completion.
+
+### Hardware APIs and higher-level programming
+
+After the compiler and launch path pass their correctness gate, a target
+library can add SIMD, local-store, DMA, mailbox, synchronization, and
+PPU–SPU communication APIs. Its safe surface should encode the invariants the
+library can enforce; explicit low-level interfaces should remain available
+where developers need exact instructions, transfer timing, or resource control.
+Higher-level buffer and task APIs may reduce manual transfer coordination, but
+must compose with the lower-level interfaces rather than replace them.
+
+A Cell-aware scheduler is a separate, optional runtime experiment. It may help
+distribute suitable tasks across available SPUs, but it is not required for
+native compilation or direct SPU execution. Its task placement, data movement,
+and synchronization costs must be measurable and visible to users; programs
+must retain a direct-control path.
+
+### Performance and project scale
+
+The goal is performance competitive with optimized C/C++ Cell toolchains, not
+an assumption that Rust or abstraction layers are automatically free. Compare
+representative workloads against the installed SPU GCC toolchain, inspect
+generated instructions, and measure transfer and scheduling overhead before
+making performance claims. Keep predictable-cost operations and low-level
+escape hatches available. Large-project support also needs modular libraries,
+reliable linking, diagnostics, tests, and debugging workflows; these should
+grow after the compiler has a dependable ABI and object pipeline.
+
+### Current implementation status
+
+The current prototype deliberately does not try to masquerade as a general
+backend. The GNU SPU toolchain remains the tested assembler/linker and ABI
+reference. The legacy GCC adapter has a two-function experimental end-to-end
+result, but still lacks a maintained Rust/GCC pairing, a supported target
+specification, clean API compatibility, and full Rust ABI/data-layout
+validation. The scalar translator remains a bounded validation harness, not
+the primary compiler architecture.
+
+The maintained port now lives in `backend/llvm/CellSPU/`, based on the
+historical target source and licensed under its retained upstream NCSA
+license. Its TableGen descriptions generate against LLVM 23.1.1 using
+`scripts/test-llvm-cellspu-tablegen.sh`. This is only an early port milestone:
+focused compilation succeeds for the target machine, subtarget, instruction,
+register, frame-lowering, and MC target-description translation units. The
+SelectionDAG lowerer and selector still have extensive LLVM API mismatches,
+and the old assembly printer has not been ported to the current MC interface. No
+LLVM-generated SPU assembly or object has been validated. The triple patch
+marks CellSPU as big-endian, 32-bit ELF. The target still needs ABI
+reconciliation, tests against SPU binutils, and resolution of its documented
+instruction-selection gaps. The installed GCC headers
+`spu_intrinsics.h` and `spu_mfcio.h` are references for future interfaces, not
+Rust APIs or evidence that their hardware contracts have been implemented.
 
 ## Prototype pipeline and ABI scope
 

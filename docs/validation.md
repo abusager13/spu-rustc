@@ -456,3 +456,25 @@ The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
 SPU behavior, runtime execution of the PPU loader, PS3 firmware integration, or
 physical hardware.
+
+## Latest verification (2026-10-30)
+
+- Installed the pinned `ps3dev/ps3toolchain` `nightly-2026-10-11` under
+  `/home/longlive/opt/ps3dev/spu` using `scripts/install-spu-toolchain.sh`.
+  This install is outside the repository and is not vendored.
+- `cargo test --offline`: 76 unit tests passed.
+- With the SPU bin directory on `PATH`,
+  `SPU_REQUIRE_E2E=1 cargo test --offline --test e2e -- --nocapture`: all six
+  end-to-end cases passed. These assembled and linked native SPU objects and
+  ELF images; the suite verifies disassembly and ELF metadata.
+- `scripts/test-llvm-cellspu-tablegen.sh` passed against LLVM 23.1.1 commit
+  `6dfe1677ab8dffbc6ec13d53a1e0215d75147689`, generating the CellSPU target
+  descriptions and applying the pinned big-endian 32-bit CellSPU triple patch.
+- Focused LLVM 23 object compilation passed for the target-machine, subtarget,
+  instruction, register, frame-lowering, and MC target-description translation
+  units. The SelectionDAG lowering and selector still fail on extensive API
+  changes, and the old assembly printer does not compile against the current MC
+  interface.
+  No LLVM `llc` assembly or object is available yet.
+- No SPU emulator executable was installed in this environment, so no runtime
+  check was run for this verification.

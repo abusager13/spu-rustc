@@ -132,48 +132,112 @@ actual PPU-launched register mapping and loader runtime remain unverified.
 
 ## Future milestones
 
-5. Port and modernize LLVM's historical CellSPU backend, then integrate it
-   with Rust's LLVM backend. A follow-up check found that the GCC snapshot
-   pinned by the current `rustc_codegen_gcc` checkout has removed SPU support:
-   `spu*-*-*` is in its unsupported-target list, and the SPU machine description
-   is absent. An isolated legacy `rustc_codegen_gcc` experiment compiled and
-   emulated two `#![no_core]` Rust-ABI functions through GCC 9.5 `libgccjit`:
-   an identity function and a `u32` addition using a compiler intrinsic. The
-   latter emits native SPU `a`. The route needed temporary API remapping, 33
-   no-op compatibility symbols, and a custom JSON with `arch: "spu"` plus a PowerPC LLVM-triple
-   placeholder. The custom JSON now uses the historical CellSPU data layout,
-   and a repository harness compiles and emulates both functions. This proves
-   one route to native Rust-generated SPU code, not a supported project target.
-   A normal `#![no_std]` probe using `core` first panicked when vector type
-   introspection returned null. A temporary vector-introspection shim got
-   past that point, but codegen then failed while lowering a core byte-array
-   constant: GCC 9.5 lacks `gcc_jit_context_new_array_constructor`, and the
-   compatibility shim returned null for that API. Cargo also could not find
-   target `compiler_builtins`. The old
-   compiler rejects `extern "C"` for `arch: "spu"`. Advancing this route
-   requires a maintained Rust/GCC pairing, clean API compatibility, vector and
-   aggregate lowering, target runtime support, and full Rust ABI validation.
-   The checked GCC versions do not offer an off-the-shelf pairing: GCC 9.5
-   supplies the SPU backend but not the aggregate-constructor libgccjit APIs;
-   GCC 10.1 rejects SPU, while GCC 12 adds those APIs. Backporting the required
-   libgccjit functionality to GCC 9.5 is the next concrete experiment, subject
-   to measuring the full API surface through a `core` build. Preserve
-   historical LLVM tests as backend support grows.
-6. Define and implement a Rust SPU target specification, full calling
-   convention and data layout, relocations, stack frames, memory operations,
-   and linker support; build `core` with `#![no_std]` and `panic=abort`.
-7. Run the PPU launcher in RPCS3 and, when available, on PS3 hardware. Validate
-   `--ppu-thread-args` against the actual entry ABI, check local-store
-   boundaries, and transfer PPU effective addresses through DMA. Replace
-   baked-in argument words and the single-word result with a tested
-   PPU-supplied argument and result protocol.
-8. Add target-specific Rust APIs for SIMD and the MFC DMA, mailbox, and
-   synchronization operations. Keep unsafe hardware interfaces separate from
-   portable `core` functionality.
-9. Run the full target test suite in an SPU emulator and, when hardware is
-   available, on an SPU loaded by a PPU program.
+The following tracks are deliberately ordered. Implementation of safe APIs and
+optional runtime features is deferred until the foundational compiler and
+execution gate is passed.
 
-The LLVM backend, Rust SPU target and `core`, PPU loader runtime validation,
-hardware APIs, and hardware execution milestones remain open. This scalar
-prototype is not a rustc SPU target and does not provide the full runtime or
-execution support needed by the long-term goal.
+### Track A: essential native compiler and execution
+
+5. **Restore and modernize the LLVM CellSPU backend.** Port instruction
+   selection, ABI lowering, register allocation support, MC assembly/object
+   support, and target registration to a maintained LLVM. Preserve and run the
+   historical CellSPU tests where applicable; add build coverage for all
+   backend components. Resolve the historical backend's documented gaps and
+   reconcile its calling convention with the maintained SPU GNU toolchain.
+   The maintained port has started in `backend/llvm/CellSPU/`, pinned to LLVM
+   23.1.1 to match the project's rustc. A repeatable test now generates its
+   TableGen descriptions and adds the `cellspu` triple against that release.
+   Focused builds now compile the target-machine, subtarget, register, frame,
+   instruction, and MC target-description files. The SelectionDAG lowering and
+   selector still have extensive API mismatches and the assembly printer remains
+   unported, so no LLVM-generated SPU assembly or object is validated. See
+   `backend/llvm/README.md` for the current boundary and reproduction command.
+
+6. **Prove target code generation and ELF correctness.** Define and test the
+   `spu-sony-ps3` target contract: SPU ISA, triple, data layout, calling
+   convention, address spaces, relocations, stack frames, memory operations,
+   object format, and linker behavior. Compile representative scalar,
+   vector, control-flow, and memory programs; inspect their instructions and
+   ELF metadata with SPU binutils; run them in an SPU emulator. Keep PPU
+   addresses distinct from local-store addresses.
+
+7. **Integrate the maintained Rust target and build `core`.** Use Rust's
+   backend path for general code generation rather than a host target. Build
+   `core` and required target support for `#![no_std]` with an initial
+   `panic=abort` policy. Test target features, compiler builtins, ABI lowering,
+   linking, diagnostics, and unsupported-feature errors.
+
+8. **Validate PPU loading and the complete execution protocol.** Replace
+   prototype register seeding and fixed arguments/results with a documented
+   PPU-supplied argument, image, and result protocol. Verify the real entry ABI,
+   local-store setup and bounds, thread status, and error paths in an SPU
+   emulator. Run on PS3 hardware when available. A PPU build or simulated PPU
+   call by itself does not pass this gate. PPU-to-SPU DMA contracts and safe
+   DMA APIs belong to Track B.
+
+The compiler gate is complete only when a maintained Rust target builds
+`#![no_std]` code, produces a correct SPU ELF, and that ELF is loaded and
+executed through the PPU path with the protocol tested above.
+
+### Track B: safe hardware libraries after the compiler gate
+
+9. **Specify hardware contracts and address types.** Distinguish local-store
+   addresses, PPU effective addresses, DMA buffers, and ordinary Rust memory.
+   Document alignment, size, lifetime, aliasing, ordering, and completion
+   requirements from the SPU hardware and runtime. Identify which properties
+   are statically enforceable, which need runtime validation, and which require
+   `unsafe`.
+
+10. **Build layered hardware APIs.** Add tested Rust interfaces for SIMD,
+   local-store access, DMA, mailboxes, synchronization, and PPU–SPU
+   communication. Use ownership and state-bearing types only where the
+   implementation can uphold their contracts, such as retaining buffer access
+   until DMA completion. Preserve explicit low-level operations for direct
+   hardware control. Do not attribute hardware guarantees to Rust's type
+   system alone.
+
+11. **Explore higher-level SPU programming.** Prototype abstractions for
+   grouping work, staging buffers, and coordinating transfers so developers
+   need not manually manage every step. Keep these abstractions optional,
+   composable with the low-level APIs, and subject to correctness and overhead
+   measurements.
+
+### Track C: optional Cell-aware runtime research
+
+12. **Evaluate automatic task scheduling as a separate runtime.** Identify
+   workloads that benefit from distributing tasks across available SPUs and
+   measure scheduling, synchronization, and data-movement costs. Preserve
+   explicit placement and direct hardware control. The scheduler is not a
+   prerequisite for the compiler, hardware APIs, or SPU ELF execution; do not
+   promise automatic speedups without workload-specific results.
+
+### Cross-cutting quality goals
+
+Across all tracks, keep the toolchain reproducible, grow emulator tests before
+claiming behavior, and use hardware tests when available. Compare generated
+code and representative benchmarks against optimized SPU C/C++ builds before
+claiming competitive performance. Add compile-fail tests for safe API
+contracts, runtime tests for hardware behavior, and link/debug workflows that
+scale to multi-module projects. Document limitations and untested behavior at
+each stage.
+
+## Investigated alternative
+
+The pinned `rustc_codegen_gcc` snapshot has removed SPU support. A separate
+legacy experiment compiled and emulated two `#![no_core]` Rust-ABI functions
+through GCC 9.5 `libgccjit`; it required temporary API remapping, 33 no-op
+compatibility symbols, and a custom JSON with a PowerPC LLVM-triple
+placeholder. It does not build `core` or provide a supported target. A
+`#![no_std]` probe then hit missing vector introspection, aggregate-constructor
+support, and target `compiler_builtins`; the old compiler also rejects
+`extern "C"` for this architecture. The checked GCC versions do not provide an
+off-the-shelf pairing: GCC 9.5 has SPU support but lacks needed libgccjit APIs,
+GCC 10.1 rejects SPU, and GCC 12 has the APIs but not the SPU backend. This
+experiment remains evidence about compatibility limits, not the project's
+primary architecture or a planned substitution for the LLVM backend. See
+`docs/validation.md` for the reproduction details.
+
+The LLVM backend, maintained Rust SPU target and `core`, and PPU loader/runtime
+validation remain open foundational work. Safe hardware libraries,
+higher-level programming APIs, optional scheduling, and competitive
+performance evidence are later objectives, not current prototype capabilities.

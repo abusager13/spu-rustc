@@ -1,0 +1,31 @@
+diff --git a/llvm/include/llvm/TargetParser/Triple.h b/llvm/include/llvm/TargetParser/Triple.h
+index d819c4975..49fcee325 100644
+--- a/llvm/include/llvm/TargetParser/Triple.h
++++ b/llvm/include/llvm/TargetParser/Triple.h
+@@ -58,0 +59 @@ public:
++    cellspu,     // Cell Broadband Engine Synergistic Processing Unit
+diff --git a/llvm/lib/TargetParser/Triple.cpp b/llvm/lib/TargetParser/Triple.cpp
+index 356782c1f..708190343 100644
+--- a/llvm/lib/TargetParser/Triple.cpp
++++ b/llvm/lib/TargetParser/Triple.cpp
+@@ -62,0 +63,2 @@ StringRef Triple::getArchTypeName(ArchType Kind) {
++  case cellspu:
++    return "cellspu";
+@@ -321,0 +324,3 @@ StringRef Triple::getArchTypePrefix(ArchType Kind) {
++  case cellspu:
++    return "cellspu";
++
+@@ -510,0 +516 @@ Triple::ArchType Triple::getArchTypeForLLVMName(StringRef Name) {
++      .Case("cellspu", cellspu)
+@@ -664,0 +671 @@ Triple::ArchType Triple::parseArch(StringRef ArchName) {
++          .Case("cellspu", Triple::cellspu)
+@@ -1009,0 +1017 @@ static Triple::ObjectFormatType getDefaultFormat(const Triple &T) {
++  case Triple::cellspu:
+@@ -1785,0 +1794 @@ unsigned Triple::getArchPointerBitWidth(llvm::Triple::ArchType Arch) {
++  case llvm::Triple::cellspu:
+@@ -1896,0 +1906 @@ Triple Triple::get32BitArchVariant() const {
++  case Triple::cellspu:
+@@ -1996,0 +2007 @@ Triple Triple::get64BitArchVariant() const {
++  case Triple::cellspu:
+@@ -2200,0 +2212 @@ Triple Triple::getLittleEndianArchVariant() const {
++  case Triple::cellspu:

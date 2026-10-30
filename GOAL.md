@@ -1,23 +1,62 @@
 # Project goal: native Rust support for the PS3 Cell SPU
 
-## Long-term outcome
+## Long-term vision
 
-Allow developers to write `#![no_std]` Rust programs that compile to native
-Sony Cell SPU machine code, produce an SPU ELF image, load that image from a Rust
-application running on the PS3 PPU, and execute it on the Cell processor.
+Build and maintain a real Rust compiler target for the PlayStation 3 Cell SPU.
+Developers should be able to write `#![no_std]` Rust, compile it to native SPU
+machine code and an SPU ELF image, load it from a Rust application on the PPU,
+and execute it on the Cell processor.
 
-## Acceptance criteria
+Over time, make substantial Cell software easier to write, safer to evolve, and
+more productive to maintain than traditional C/C++ projects, without hiding
+the hardware or sacrificing predictable low-level control. The compiler is the
+foundation; libraries and optional runtimes come only after its ABI, code
+generation, and execution model are reliable.
+
+## Foundational compiler acceptance criteria
 
 - Use the SPU ISA, ABI, data layout, local-store address model, and executable
   format; keep them distinct from the PS3 PPU target.
-- Build a real Rust compiler target, eventually including `core`, rather than
-  relying on a host-target Rust compiler for general code generation.
-- Provide Rust APIs for SPU SIMD, local-store access, DMA, mailboxes, and
-  synchronization.
-- Link and load SPU programs from Rust PPU code and validate execution in an
-  SPU emulator or on PS3 hardware when available.
-- Keep automated tests and document the toolchain, design choices, limitations,
-  and untested behavior. Do not treat PPU simulation as SPU support.
+- Provide a maintained Rust target and native backend, including `core` for
+  `#![no_std]` programs; host-target code generation remains a bounded
+  validation technique only.
+- Produce correctly linked SPU ELF images and load and execute them from a
+  distinct PPU application. Validate the SPU path in an emulator and on
+  hardware when available; a PPU simulation does not count as SPU execution.
+- Test instruction selection, ABI and data layout, relocations, local-store
+  boundaries, PPU-to-SPU arguments and results, and documented unsupported
+  behavior. Keep the toolchain and reproducible validation steps documented.
+
+## Later hardware-library objectives
+
+After the compiler and execution path are established, provide Rust APIs for
+SIMD, local-store memory, DMA, mailboxes, synchronization, and PPU–SPU
+communication. Use ownership, borrowing, lifetimes, and types to encode the
+rules a library can actually establish, such as buffer ownership while a DMA
+transfer is in flight. Keep direct hardware access available through explicit
+low-level interfaces.
+
+Rust's type system does not automatically know Cell hardware state. Safe APIs
+must be backed by correct implementations and documented contracts; facts that
+cannot be proved statically may need runtime checks or an `unsafe` boundary.
+Never claim that a wrapper makes DMA, aliasing, synchronization, or local-store
+access safe without tests for those contracts.
+
+## Later productivity and performance objectives
+
+- Explore higher-level APIs that manage buffers, transfers, and SPU work while
+  retaining a path to direct control.
+- Investigate a Cell-aware task scheduler only as an optional runtime layer.
+  It must not be required to compile or run SPU programs, and direct placement
+  and synchronization must remain available.
+- Aim for performance competitive with optimized C/C++ Cell toolchains. Check
+  generated code and benchmark representative workloads before making
+  performance claims; preserve predictable costs and escape hatches.
+- Make large projects practical to build and maintain through modular APIs,
+  reliable linking, useful diagnostics, testing, and debugging support.
+
+These library and runtime objectives follow the foundational compiler gate;
+they must not delay or weaken backend correctness.
 
 ## Current progress
 
@@ -65,7 +104,12 @@ target and runtime acceptance criteria remain open.
 
 The current compiler/backend direction is to port and modernize LLVM's
 historical CellSPU backend, using the PS3 GNU toolchain as the assembler,
-linker, and ABI reference. That source has been investigated but not yet
-modified or integrated here; the backend port remains future work. See [the
-architecture investigation](docs/architecture.md) and [the milestone
-plan](docs/roadmap.md).
+linker, and ABI reference. The target source now lives under
+`backend/llvm/CellSPU/` and its TableGen descriptions generate against the
+LLVM 23.1.1 release used by the pinned rustc. The C++ backend does not yet
+compile against that LLVM version, and no `llc` SPU assembly or LLVM-emitted
+SPU object has been validated. The translator remains the only maintained
+Rust-to-SPU end-to-end compiler path. See
+[the LLVM backend port](backend/llvm/README.md),
+[the architecture investigation](docs/architecture.md), and
+[the milestone plan](docs/roadmap.md).
