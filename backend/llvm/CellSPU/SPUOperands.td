@@ -16,7 +16,7 @@ def TO_IMM32 : SDNodeXForm<imm, [{
 
 // TO_IMM16 - Convert an i8/i32 to i16.
 def TO_IMM16 : SDNodeXForm<imm, [{
-  return CurDAG->getTargetConstant(N->getZExtValue(), MVT::i16);
+  return CurDAG->getTargetConstant(N->getZExtValue(), SDLoc(), MVT::i16);
 }]>;
 
 
@@ -186,24 +186,24 @@ def bitshift : PatLeaf<(imm), [{
 // the float was really an unsigned integer:
 def HI16_f32 : SDNodeXForm<fpimm, [{
   float fval = N->getValueAPF().convertToFloat();
-  return getI32Imm(FloatToBits(fval) >> 16);
+  return getI32Imm(bit_cast<uint32_t>(fval) >> 16);
 }]>;
 
 // Transformation function on floats: get the low 16 bits as if the float was
 // an unsigned integer.
 def LO16_f32 : SDNodeXForm<fpimm, [{
   float fval = N->getValueAPF().convertToFloat();
-  return getI32Imm(FloatToBits(fval) & 0xffff);
+  return getI32Imm(bit_cast<uint32_t>(fval) & 0xffff);
 }]>;
 
 def FPimm_sext16 : SDNodeXForm<fpimm, [{
   float fval = N->getValueAPF().convertToFloat();
-  return getI32Imm((int) ((FloatToBits(fval) << 16) >> 16));
+  return getI32Imm((int) ((bit_cast<uint32_t>(fval) << 16) >> 16));
 }]>;
 
 def FPimm_u18 : SDNodeXForm<fpimm, [{
   float fval = N->getValueAPF().convertToFloat();
-  return getI32Imm(FloatToBits(fval) & ((1 << 18) - 1));
+  return getI32Imm(bit_cast<uint32_t>(fval) & ((1 << 18) - 1));
 }]>;
 
 def fpimmSExt16 : PatLeaf<(fpimm), [{
@@ -214,7 +214,7 @@ def fpimmSExt16 : PatLeaf<(fpimm), [{
 // Does the SFP constant only have upp 16 bits set?
 def hi16_f32 : PatLeaf<(fpimm), [{
   if (N->getValueType(0) == MVT::f32) {
-    uint32_t val = FloatToBits(N->getValueAPF().convertToFloat());
+    uint32_t val = bit_cast<uint32_t>(N->getValueAPF().convertToFloat());
     return ((val & 0xffff0000) == val);
   }
 
@@ -224,7 +224,7 @@ def hi16_f32 : PatLeaf<(fpimm), [{
 // Does the SFP constant fit into 18 bits?
 def fpimm18  : PatLeaf<(fpimm), [{
   if (N->getValueType(0) == MVT::f32) {
-    uint32_t Value = FloatToBits(N->getValueAPF().convertToFloat());
+    uint32_t Value = bit_cast<uint32_t>(N->getValueAPF().convertToFloat());
     return isUInt<18>(Value);
   }
 

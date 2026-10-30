@@ -70,10 +70,6 @@ namespace llvm {
     //! Return the reserved registers
     BitVector getReservedRegs(const MachineFunction &MF) const;
 
-    //! Eliminate the call frame setup pseudo-instructions
-    void eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                       MachineBasicBlock &MBB,
-                                       MachineBasicBlock::iterator I) const;
     //! Convert frame indicies into machine operands
     bool eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                              unsigned FIOperandNum,

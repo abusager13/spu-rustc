@@ -26,9 +26,11 @@ small loader here uses the locally available PSL1GHT APIs.
 
 The normal Rust compiler delegates instruction selection, register allocation,
 assembly/object emission, and much of ABI lowering to LLVM. A Rust target JSON
-cannot add a CPU backend that LLVM does not contain. Current LLVM does not
-register a CellSPU target, so a real `rustc --target=spu-sony-ps3` needs a
-compiler backend before a Rust target spec can work.
+cannot add a CPU backend that LLVM does not contain. Stock LLVM 23.1.1, which
+ships with this project's pinned rustc, does not register CellSPU; this
+repository's separate C++ port adds an experimental `cellspu` target to a
+custom LLVM build. A maintained `rustc --target=spu-sony-ps3` path still needs
+that backend and a Rust target specification integrated together.
 
 LLVM's historical `CellSPU` backend was removed in November 2012 in
 [`llvm-project` commit 950d870](https://github.com/llvm/llvm-project/commit/950d8703b1e79df72b8acda09421d1e0c9f262b8).
@@ -56,9 +58,11 @@ That backend records several useful design constraints:
   installed GCC 9.5 SPU reference differs for scalar overflow arguments: its
   caller and callee code use 16-byte slots. See the
   [GCC SPU argument-lowering code](https://github.com/gcc-mirror/gcc/blob/releases/gcc-9.5.0/gcc/config/spu/spu.c#L3624-L3669).
-  The prototype follows the installed toolchain for now; this difference needs
-  reconciliation against the historical backend before claiming full
-  calling-convention compatibility.
+  The maintained LLVM port follows the installed toolchain for scalar overflow
+  slots. Its emulator check verifies the 73rd `u32` argument from a GCC caller
+  into Rust code, and through a Rust-generated pass-through call. Other scalar
+  widths, vectors, varargs, and full calling-convention compatibility remain
+  unverified; the difference from the historical backend still needs review.
 - `$0` is the link register (`$lr`), `$1` the stack pointer (`$sp`), and `$2`
   the environment pointer. The historical backend marks `$80` through `$127`
   callee-saved. The stack grows down and is 16-byte aligned.
@@ -228,16 +232,43 @@ the primary compiler architecture.
 
 The maintained port now lives in `backend/llvm/CellSPU/`, based on the
 historical target source and licensed under its retained upstream NCSA
-license. Its TableGen descriptions generate against LLVM 23.1.1 using
-`scripts/test-llvm-cellspu-tablegen.sh`. This is only an early port milestone:
-focused compilation succeeds for the target machine, subtarget, instruction,
-register, frame-lowering, and MC target-description translation units. The
-SelectionDAG lowerer and selector still have extensive LLVM API mismatches,
-and the old assembly printer has not been ported to the current MC interface. No
-LLVM-generated SPU assembly or object has been validated. The triple patch
-marks CellSPU as big-endian, 32-bit ELF. The target still needs ABI
-reconciliation, tests against SPU binutils, and resolution of its documented
-instruction-selection gaps. The installed GCC headers
+license. It builds the CellSPU code-generation library and an LLVM 23.1.1
+`llc`. The pinned host rustc emits LLVM IR from a `#![no_std]` fixture; the
+smoke harness replaces the host triple and data layout with CellSPU's
+big-endian 32-bit-pointer values before custom `llc` lowers it. Add, subtract,
+bitwise operations, increment, constant return, normalized equality, wrapping
+`u32` multiplication, `swap_bytes`, `leading_zeros`, `trailing_zeros`,
+`leading_ones`, `trailing_ones`, `count_ones`, both rotate directions, three immediate
+`i32` shift forms, and variable shifts with an explicit five-bit mask pass
+machine-instruction verification and emit ELF objects directly through LLVM.
+GNU SPU binutils link them, and they run in the pinned emulator with the
+expected results. The LLVM fixture tests
+both emulator outcomes for all ten signed and unsigned `i32` and `i16`
+comparison branches. A test-only GCC caller verifies signed and unsigned
+`i16` max results across the C ABI.
+Another GCC caller passes 73 `u32` arguments to Rust code, checking that the
+first stack-passed value is read from the maintained 16-byte-slot ABI. The
+fixture also checks a Rust function forwarding those 73 dynamic arguments and
+a Rust function passing 72 zero constants plus `0x12345678` to a second Rust
+function. All three paths return `0x12345678` in the emulator. This is a narrow
+overflow argument check, not full ABI coverage.
+Unsafe raw-pointer `u32` loads and stores also run against a local-store block;
+the store test confirms that the other words in that quadword are preserved.
+One stack-backed `u32` while loop also runs for inputs 0, 1, 5, and 10. A
+separate `-O1` Rust loop with two loop-carried `phi` values and a helper call
+returns the expected results for inputs 0, 1, 2, 5, and 10. This does not
+provide `rustc --target=spu` or validate general pointer safety, pointer
+arithmetic, cross-block accesses, other loop shapes, or general `phi`-node
+lowering.
+LLVM direct object emission now works for the instruction and relocation forms
+covered by the smoke fixture. The maintained backend contains an experimental
+MC code emitter, assembler backend, and ELF writer; GNU `spu-ld` still links
+the resulting objects. This does not validate the full instruction encoder or
+relocation set, and the emitter currently drops `HBRA` branch hints by writing
+a no-op in the hint slot.
+The triple patch marks CellSPU as big-endian, 32-bit ELF. The target still needs
+ABI reconciliation, broader tests against SPU binutils, Rust target and `core`
+integration, and resolution of its documented instruction-selection gaps. The installed GCC headers
 `spu_intrinsics.h` and `spu_mfcio.h` are references for future interfaces, not
 Rust APIs or evidence that their hardware contracts have been implemented.
 

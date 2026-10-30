@@ -17,6 +17,7 @@
 #include "SPU.h"
 #include "SPUTargetMachine.h"
 #include "SPUSubtarget.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/CodeGen/MachineFunctionPass.h"
 #include "llvm/CodeGen/MachineInstrBuilder.h"
 #include "llvm/CodeGen/TargetInstrInfo.h"
@@ -39,13 +40,13 @@ namespace {
       LLVM_DEBUG( dbgs() << "********** SPU Nop filler **********\n" ; );
     }
 
-    virtual const char *getPassName() const {
+    StringRef getPassName() const override {
       return "SPU nop/lnop Filler";
     }
 
     void runOnMachineBasicBlock(MachineBasicBlock &MBB);
 
-    bool runOnMachineFunction(MachineFunction &F) {
+    bool runOnMachineFunction(MachineFunction &F) override {
       const SPUSubtarget &STI = F.getSubtarget<SPUSubtarget>();
       TII = STI.getInstrInfo();
       IID = STI.getInstrItineraryData();
@@ -75,6 +76,13 @@ void SPUNopFiller::
 runOnMachineBasicBlock(MachineBasicBlock &MBB)
 {
   assert( isEvenPlace && "basic block start from odd address");
+  MachineBasicBlock *TBB = nullptr;
+  MachineBasicBlock *FBB = nullptr;
+  SmallVector<MachineOperand, 4> Cond;
+  // Resolve a false edge that falls through before inserting pipeline filler.
+  // Otherwise an explicit branch pair can require a nop between terminators.
+  TII->analyzeBranch(MBB, TBB, FBB, Cond, /*AllowModify=*/true);
+
   for (MachineBasicBlock::iterator I = MBB.begin(); I != MBB.end(); ++I)
   {
     SPUOpPlace this_optype, next_optype;

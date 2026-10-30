@@ -22,14 +22,16 @@
 //===----------------------------------------------------------------------===//
 
 let hasCtrlDep = 1, Defs = [R1], Uses = [R1] in {
-  def ADJCALLSTACKDOWN : Pseudo<(outs), (ins u16imm_i32:$amt),
-                                "${:comment} ADJCALLSTACKDOWN",
-                                [(callseq_start timm:$amt)]>;
-  def ADJCALLSTACKUP   : Pseudo<(outs), (ins u16imm_i32:$amt),
-                                "${:comment} ADJCALLSTACKUP",
-                                [(callseq_end timm:$amt)]>;
+  def ADJCALLSTACKDOWN : Pseudo<(outs), (ins u16imm_i32:$amt1,
+                                               u16imm_i32:$amt2),
+                                "# ADJCALLSTACKDOWN",
+                                [(callseq_start timm:$amt1, timm:$amt2)]>;
+  def ADJCALLSTACKUP   : Pseudo<(outs), (ins u16imm_i32:$amt1,
+                                               u16imm_i32:$amt2),
+                                "# ADJCALLSTACKUP",
+                                [(callseq_end timm:$amt1, timm:$amt2)]>;
   def HBR_LABEL        : Pseudo<(outs), (ins hbrtarget:$targ),
-                                "$targ:\t${:comment}branch hint target",[ ]>;
+                                "$targ:\t# branch hint target",[ ]>;
 }
 
 //===----------------------------------------------------------------------===//
@@ -3587,6 +3589,39 @@ let isBranch = 1, isTerminator = 1, hasCtrlDep = 1 in {
 //===----------------------------------------------------------------------===//
 // setcc and brcond patterns:
 //===----------------------------------------------------------------------===//
+
+// Direct BR_CC patterns preserve the halfword compare's native i16 result.
+// Without these, LLVM 23's generic BR_CC expansion creates an i32 SETCC node
+// that has no matching halfword pattern.
+multiclass BranchCCGtHalfword<CondCode Cond, SPUInstr CmpInst,
+                              SPUInstr BranchInst> {
+  def : Pat<(brcc Cond, R16C:$lhs, R16C:$rhs, bb:$dest),
+            (BranchInst (CmpInst R16C:$lhs, R16C:$rhs), bb:$dest)>;
+}
+
+defm BRCCsgt16 : BranchCCGtHalfword<SETGT, CGTHr16, BRHNZr16>;
+defm BRCCugt16 : BranchCCGtHalfword<SETUGT, CLGTHr16, BRHNZr16>;
+
+multiclass BranchCCHalfword<CondCode Cond, SPUInstr CmpInst,
+                            SPUInstr BranchInst> {
+  def : Pat<(brcc Cond, R16C:$lhs, R16C:$rhs, bb:$dest),
+            (BranchInst (CmpInst R16C:$lhs, R16C:$rhs), bb:$dest)>;
+}
+
+multiclass BranchCCReverseHalfword<CondCode Cond, SPUInstr CmpInst,
+                                   SPUInstr BranchInst> {
+  def : Pat<(brcc Cond, R16C:$lhs, R16C:$rhs, bb:$dest),
+            (BranchInst (CmpInst R16C:$rhs, R16C:$lhs), bb:$dest)>;
+}
+
+defm BRCCeq16 : BranchCCHalfword<SETEQ, CEQHr16, BRHNZr16>;
+defm BRCCne16 : BranchCCHalfword<SETNE, CEQHr16, BRHZr16>;
+defm BRCCslt16 : BranchCCReverseHalfword<SETLT, CGTHr16, BRHNZr16>;
+defm BRCCsle16 : BranchCCHalfword<SETLE, CGTHr16, BRHZr16>;
+defm BRCCsge16 : BranchCCReverseHalfword<SETGE, CGTHr16, BRHZr16>;
+defm BRCCult16 : BranchCCReverseHalfword<SETULT, CLGTHr16, BRHNZr16>;
+defm BRCCule16 : BranchCCHalfword<SETULE, CLGTHr16, BRHZr16>;
+defm BRCCuge16 : BranchCCReverseHalfword<SETUGE, CLGTHr16, BRHZr16>;
 
 def : Pat<(brcond (i16 (seteq R16C:$rA, 0)), bb:$dest),
           (BRHZr16 R16C:$rA, bb:$dest)>;

@@ -12,7 +12,9 @@
 //===----------------------------------------------------------------------===//
 
 // Type profile for a call sequence
-def SDT_SPUCallSeq : SDTypeProfile<0, 1, [ SDTCisVT<0, i32> ]>;
+def SDT_SPUCallSeq : SDTypeProfile<0, 2, [
+  SDTCisVT<0, i32>, SDTCisVT<1, i32>
+]>;
 
 // SPU_GenControl: Type profile for generating control words for insertions
 def SPU_GenControl : SDTypeProfile<1, 1, []>;
@@ -155,5 +157,5 @@ class NoEncode<string E> {
 // instruction scheduling doesn't disassociate them.)
 //===----------------------------------------------------------------------===//
 
-def retflag     : SDNode<"SPUISD::RET_FLAG", SDTNone,
-                         [SDNPHasChain, SDNPOptInGlue]>;
+def retflag     : SDNode<"SPUISD::RET_FLAG", SDTypeProfile<0, -1, []>,
+                         [SDNPHasChain, SDNPOptInGlue, SDNPVariadic]>;

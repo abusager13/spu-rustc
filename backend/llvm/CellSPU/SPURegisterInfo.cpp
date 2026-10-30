@@ -238,17 +238,6 @@ BitVector SPURegisterInfo::getReservedRegs(const MachineFunction &MF) const {
 // Stack Frame Processing methods
 //===----------------------------------------------------------------------===//
 
-//--------------------------------------------------------------------------
-void
-SPURegisterInfo::eliminateCallFramePseudoInstr(MachineFunction &MF,
-                                               MachineBasicBlock &MBB,
-                                               MachineBasicBlock::iterator I)
-  const
-{
-  // Simply discard ADJCALLSTACKDOWN, ADJCALLSTACKUP instructions.
-  MBB.erase(I);
-}
-
 bool
 SPURegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
                                      unsigned FIOperandNum,
@@ -279,6 +268,17 @@ SPURegisterInfo::eliminateFrameIndex(MachineBasicBlock::iterator II, int SPAdj,
 
   // Offset is biased by $lr's slot at the bottom.
   Offset += MO.getImm() + MFI->getStackSize() + SPUFrameLowering::minStackSize();
+
+  // Formal arguments passed on the caller's stack are above the 32-byte
+  // linkage area. When this function allocates a frame, the prologue also
+  // moves $sp below that area, so restore the caller-side bias here. Leaf
+  // functions without a prologue already address arguments from the incoming
+  // $sp and must not receive the extra adjustment.
+  SPUFunctionInfo *FuncInfo = MF.getInfo<SPUFunctionInfo>();
+  if (FuncInfo->isIncomingArgFrameIndex(FrameIndex) &&
+      (MFI->getStackSize() > 16 || MFI->adjustsStack()))
+    Offset += SPUFrameLowering::minStackSize();
+
   assert((Offset & 0xf) == 0
          && "16-byte alignment violated in eliminateFrameIndex");
 

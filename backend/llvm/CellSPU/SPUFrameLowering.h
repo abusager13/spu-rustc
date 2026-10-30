@@ -29,6 +29,10 @@ namespace llvm {
   public:
     SPUFrameLowering(const SPUSubtarget &sti);
 
+    MachineBasicBlock::iterator eliminateCallFramePseudoInstr(
+        MachineFunction &MF, MachineBasicBlock &MBB,
+        MachineBasicBlock::iterator I) const override;
+
     //! Determine the frame's layour
     void determineFrameLayout(MachineFunction &MF) const;
 

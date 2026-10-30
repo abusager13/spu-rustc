@@ -7,47 +7,154 @@ and retains the upstream license in `LLVM-NCSA-LICENSE.txt`. The port targets
 LLVM 23.1.1, matching the LLVM version bundled with this project's pinned
 `rustc 1.99.1`.
 
+This backend is written in C++ because LLVM's target-code-generation
+interfaces are C++. It is compiler infrastructure behind the Rust frontend;
+Rust programs and the Rust frontend remain Rust. The experimental translator
+is still a separate validation harness and is not the long-term compiler path.
+
 ## Current status
 
-The backend's target descriptions now generate with LLVM 23.1.1's
-`llvm-tblgen`. The reproducible check is:
+The complete CellSPU code-generation library now builds against LLVM 23.1.1,
+and the resulting `llc` registers the `cellspu` target. The backend has passed
+a tested native-code path starting from `#![no_std]` Rust `i32` functions
+covering addition, subtraction, AND, OR, XOR, increment, constant return,
+equality with a normalized result, wrapping `u32` multiplication, and
+immediate left, logical-right, and arithmetic-right shifts. An optimized
+fixture also checks variable left, logical-right, and arithmetic-right shifts
+after an explicit five-bit count mask, plus `leading_zeros`, `trailing_zeros`,
+`leading_ones`, `trailing_ones`, `count_ones`, both rotate directions, and
+`swap_bytes`. It also compiles ordinary
+Rust conditionals
+to SPU branches for all ten signed and unsigned `i32` and `i16` comparison
+predicates. A stack-backed `u32` while loop
+runs at `-O0`, including a loop backedge and stack frame. A separate Rust
+`-O1` fixture checks a loop with loop-carried `phi` values and an in-loop
+helper call, plus unsafe raw-pointer `u32` loads and stores:
+
+1. The pinned host `rustc` emits host-target LLVM IR. The smoke harness replaces
+   the host triple and data layout with `cellspu-unknown-elf` and the backend's
+   big-endian 32-bit-pointer layout. The custom `llc` receives the explicit
+   target triple and passes `-verify-machineinstrs` while directly writing
+   ELF32 big-endian relocatable objects with machine `SPU`.
+2. A small SPU entry wrapper and test-only C callers compiled by SPU GCC use
+   the SPU C ABI; GNU `spu-ld` links the objects into an executable. GNU
+   `spu-as` assembles the small entry wrapper.
+3. The pinned `anergistic`
+   emulator checks all ninety-one result words and reaches `stop`. The
+   immediate shifts return `0x91a0`, `0x04000000`, and `0xffffffff`; the
+   variable-shift cases verify counts 32, 33, and 36 are masked to five bits.
+   Wrapping multiplication returns `0x369d0368` for `0x12345678 * 3` and
+   `0xfffffffc` for `0xfffffffe * 2`. Leading-zero count returns 17 for
+   `0x7fff` and 32 for zero; trailing-zero count returns 31 for
+   `0x80000000`, 8 for `0x100`, and 32 for zero.
+   Population count returns 13 for `0x12345678`, 32 for `0xffffffff`, and
+   zero for zero.
+   Leading-one count returns 8 for `0xff000000` and 32 for `0xffffffff`;
+   trailing-one count returns 4 for `0xf` and 32 for `0xffffffff`.
+   `rotate_left(0x12345678, 40)` and
+   `rotate_right(0x12345678, 40)` return `0x34567812` and `0x78123456`.
+   `swap_bytes(0x12345678)` returns `0x78563412`.
+   Both
+   outcomes of every signed and unsigned `i32` and `i16` comparison branch
+   pass. The GCC caller widens signed and unsigned
+   `i16` max results to `i32`, returning `5`/`7` and `0x5678`/`0x9876`. The
+   stack-argument fixture checks the 73rd `u32` argument in a GCC-to-Rust call,
+   a Rust-generated forwarding call, and a direct Rust call with constant
+   arguments; each returns `0x12345678`.
+   The `sum_to_n` loop returns `0`, `0`, `10`, and `45` for inputs `0`, `1`,
+   `5`, and `10`. The optimized `sum_steps_opt` loop, which calls a no-inline helper
+   that adds three, returns `0`, `3`, `7`, `25`, and `75` for inputs `0`, `1`,
+   `2`, `5`, and `10`. Pointer cases load the first and fourth words of a 16-byte
+   local-store block, store `0xaabbccdd` into its second word, then reload all
+   four words to verify the other three were preserved.
+
+Run the smoke check with LLVM 23.1.1 `llc`, the PS3 SPU binutils, and the
+standalone emulator available:
 
 ```sh
-scripts/test-llvm-cellspu-tablegen.sh /path/to/llvm-project
+LLC=/path/to/llvm-build/bin/llc \
+SPU_AS=/path/to/spu-as \
+SPU_LD=/path/to/spu-ld \
+SPU_CC=/path/to/spu-gcc \
+SPU_READELF=/path/to/spu-readelf \
+SPU_OBJDUMP=/path/to/spu-objdump \
+SPU_EMULATOR=/path/to/anergistic \
+  scripts/test-llvm-cellspu-backend.sh
 ```
 
-The source checkout must be at LLVM commit
-`6dfe1677ab8dffbc6ec13d53a1e0215d75147689` (the `llvmorg-23.1.1` release).
-The script applies the pinned `cellspu` triple patch, adds the target to
-LLVM's build list, copies this maintained target source into that checkout,
-configures a host build, and generates the target descriptions. The triple
-patch identifies CellSPU as big-endian, 32-bit, and ELF.
+To prepare the LLVM source tree, use the exact `llvmorg-23.1.1` commit
+`6dfe1677ab8dffbc6ec13d53a1e0215d75147689` and run
+[`scripts/test-llvm-cellspu-tablegen.sh`](../../scripts/test-llvm-cellspu-tablegen.sh)
+with that source checkout and a build directory. The script applies the pinned
+`cellspu` triple patch, adds the target to LLVM's target list, copies the
+maintained sources, and generates the target descriptions. Build the compiler
+with:
 
-This is not yet a working LLVM code generator. Compiling the C++ backend
-currently fails against LLVM 23 APIs. Focused compilation now succeeds for
-the target machine, subtarget, instruction information, register information,
-frame lowering, and MC target-description translation units. The SelectionDAG
-lowering and selector still have extensive API mismatches, and the historical
-assembly printer has not been ported to LLVM's current MC printer interface.
-There is no `llc` that emits SPU assembly, LLVM SPU object writer, or maintained
-rustc target yet. The GNU SPU assembler remains the route for turning assembly
-into native ELF after code generation works.
+```sh
+cmake --build /path/to/llvm-build --target llc -j6
+```
 
-The initial port deliberately does not import the historical Cell SDK intrinsic
-table. Ordinary Rust vector operations should lower through LLVM's generic
-operations; target-specific intrinsics can be added with a maintained Rust
-API and tests. The old `xshw` vector form is retained as an instruction
+## Current limits
+
+The passing smoke check starts with Rust source, but invokes host `rustc` first
+and then retargets its LLVM IR with a separate `llc` command. The harness
+explicitly replaces the host data layout and triple with the backend's CellSPU
+values, so it tests backend lowering of 32-bit pointers but not rustc's ability
+to emit IR for that layout. It does not show that `rustc --target=spu` can emit
+SPU code. This repository still has no maintained Rust target specification or
+rustc backend registration for SPU, and `core` and target `compiler_builtins` do
+not build for this target. The `cellspu` LLVM target is experimental; only the
+listed scalar operations, all signed and unsigned `i32` and `i16` comparison
+branches, aligned `u32` local-store
+pointer loads/stores, and the two loop fixtures have run in the emulator. A
+single count for each rotate direction, one byte-swap input, and only the
+listed bit-count inputs are tested; this does not validate other rotate or
+bit-count operations. A
+test-only SPU GCC caller verifies signed and unsigned `i16` return values across
+the C ABI. The stack-argument fixture checks the 73rd `u32` argument across GCC
+and Rust caller/callee boundaries, including a Rust call whose arguments are
+constants; other scalar widths, vectors, varargs, and general ABI behavior
+remain unvalidated. The optimized loop covers one loop shape with two
+loop-carried values and an ordinary helper call; general loops, calls, and
+`phi` lowering remain unvalidated. The raw-pointer functions are `unsafe`; no
+pointer bounds, provenance, or ownership guarantee is added by this backend test. It
+covers one 16-byte block, not cross-block accesses, arbitrary pointer
+arithmetic, or general memory semantics. Loops with other control-flow shapes,
+general merge/phi cases, and the rest of the ABI remain unvalidated here.
+
+LLVM now has an experimental MC code emitter, assembler backend, and ELF object
+writer for the instruction and relocation forms exercised by the smoke check.
+`llc -filetype=obj` directly emits the tested CellSPU objects, including
+`R_SPU_ADDR16` and `R_SPU_REL16` relocations. This does not
+implement or validate the full SPU instruction encoder or relocation set.
+Branch-hint `HBRA` instructions currently occupy their instruction slot as an
+SPU no-op, so branch prediction hints are dropped. Unsupported instruction
+forms can still fail object emission. The tested variable shifts explicitly
+mask counts in Rust; this does not validate other shift-count or overflow
+semantics. The smoke script also sends the tested
+instruction streams through LLVM's assembly printer and GNU `spu-as`, then
+compares disassembly; the direct encodings match after excluding the deliberately
+dropped branch hints. GNU SPU binutils remain the linker and ABI reference. Do
+not treat the translator's larger emulator coverage as coverage of this LLVM
+backend.
+
+The initial port deliberately does not import the historical Cell SDK
+intrinsic table. Ordinary Rust vector operations should lower through LLVM's
+generic operations; target-specific intrinsics can be added with a maintained
+Rust API and tests. The old `xshw` vector form is retained as an instruction
 description but has no selection pattern until its packed-lane semantics are
 specified and tested.
 
 ## Next backend work
 
-1. Port SelectionDAG lowering and the assembly printer to LLVM 23 APIs.
-2. Build and run the target pass pipeline, then compile scalar/control-flow IR
-   to SPU assembly.
-3. Assemble emitted code with the pinned GNU toolchain and check instructions,
-   ABI behavior, and ELF metadata.
-4. Add emulator tests before enabling a Rust target or building `core`.
+1. Expand the MC emitter and relocation coverage and validate it against GNU
+   SPU binutils, including branch hints and additional object forms.
+2. Add fixtures for more branch predicates, loop shapes, merge/phi cases,
+   calls, and ABI cases, with disassembly and emulator checks.
+3. Integrate the target with rustc, then build and validate `core` and target
+   support before claiming a usable Rust SPU target.
+4. Test PPU loading and the real entry protocol separately from the current
+   direct emulator wrapper.
 
 The historical backend is a starting point for instruction and ABI behavior,
-not evidence that the modern port has those guarantees.
+not evidence that all of its behavior is correct in this port.

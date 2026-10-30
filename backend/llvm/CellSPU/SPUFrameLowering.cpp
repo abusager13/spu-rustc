@@ -40,6 +40,14 @@ SPUFrameLowering::SPUFrameLowering(const SPUSubtarget &sti)
   LR[0].second = 16;
 }
 
+MachineBasicBlock::iterator
+SPUFrameLowering::eliminateCallFramePseudoInstr(
+    MachineFunction &, MachineBasicBlock &MBB,
+    MachineBasicBlock::iterator I) const {
+  // The frame layout reserves outgoing argument space in the function frame.
+  return MBB.erase(I);
+}
+
 
 //--------------------------------------------------------------------------
 // hasFP - Return true if the specified function actually has a dedicated frame
@@ -113,26 +121,25 @@ void SPUFrameLowering::emitPrologue(MachineFunction &MF,
     FrameSize = -(FrameSize + SPUFrameLowering::minStackSize());
     // Adjust stack pointer, spilling $lr -> 16($sp) and $sp -> -FrameSize($sp)
     // for the ABI
-    BuildMI(MBB, MBBI, dl, TII.get(SPU::STQDr32), SPU::R0).addImm(16)
+    BuildMI(MBB, MBBI, dl, TII.get(SPU::STQDr32)).addReg(SPU::R0).addImm(16)
       .addReg(SPU::R1);
     if (isInt<10>(FrameSize)) {
       // Spill $sp to adjusted $sp
-      BuildMI(MBB, MBBI, dl, TII.get(SPU::STQDr32), SPU::R1).addImm(FrameSize)
-        .addReg(SPU::R1);
+      BuildMI(MBB, MBBI, dl, TII.get(SPU::STQDr32)).addReg(SPU::R1)
+        .addImm(FrameSize).addReg(SPU::R1);
       // Adjust $sp by required amout
       BuildMI(MBB, MBBI, dl, TII.get(SPU::AIr32), SPU::R1).addReg(SPU::R1)
         .addImm(FrameSize);
     } else if (isInt<16>(FrameSize)) {
       // Frame size can be loaded into ILr32n, so temporarily spill $r2 and use
       // $r2 to adjust $sp:
-      BuildMI(MBB, MBBI, dl, TII.get(SPU::STQDr128), SPU::R2)
+      BuildMI(MBB, MBBI, dl, TII.get(SPU::STQDr128)).addReg(SPU::R2)
         .addImm(-16)
         .addReg(SPU::R1);
       BuildMI(MBB, MBBI, dl, TII.get(SPU::ILr32), SPU::R2)
         .addImm(FrameSize);
-      BuildMI(MBB, MBBI, dl, TII.get(SPU::STQXr32), SPU::R1)
-        .addReg(SPU::R2)
-        .addReg(SPU::R1);
+      BuildMI(MBB, MBBI, dl, TII.get(SPU::STQXr32)).addReg(SPU::R1)
+        .addReg(SPU::R2).addReg(SPU::R1);
       BuildMI(MBB, MBBI, dl, TII.get(SPU::Ar32), SPU::R1)
         .addReg(SPU::R1)
         .addReg(SPU::R2);
@@ -179,7 +186,7 @@ void SPUFrameLowering::emitEpilogue(MachineFunction &MF,
     } else if (FrameSize <= (1 << 16) - 1 && FrameSize >= -(1 << 16)) {
       // Frame size can be loaded into ILr32n, so temporarily spill $r2 and use
       // $r2 to adjust $sp:
-      BuildMI(MBB, MBBI, dl, TII.get(SPU::STQDr128), SPU::R2)
+      BuildMI(MBB, MBBI, dl, TII.get(SPU::STQDr128)).addReg(SPU::R2)
         .addImm(16)
         .addReg(SPU::R1);
       BuildMI(MBB, MBBI, dl, TII.get(SPU::ILr32), SPU::R2)

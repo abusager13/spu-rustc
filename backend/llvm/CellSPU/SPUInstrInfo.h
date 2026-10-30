@@ -39,10 +39,11 @@ namespace llvm {
     unsigned isStoreToStackSlot(const MachineInstr *MI,
                                 int &FrameIndex) const;
 
-    virtual void copyPhysReg(MachineBasicBlock &MBB,
-                             MachineBasicBlock::iterator I, DebugLoc DL,
-                             unsigned DestReg, unsigned SrcReg,
-                             bool KillSrc) const;
+    void copyPhysReg(MachineBasicBlock &MBB,
+                     MachineBasicBlock::iterator I, const DebugLoc &DL,
+                     Register DestReg, Register SrcReg, bool KillSrc,
+                     bool RenamableDest = false,
+                     bool RenamableSrc = false) const override;
 
     //! Store a register to a stack slot, based on its register class.
     void storeRegToStackSlot(MachineBasicBlock &MBB,
@@ -60,20 +61,21 @@ namespace llvm {
                               MachineInstr::MIFlag Flags) const override;
 
     //! Reverses a branch's condition, returning false on success.
-    virtual
-    bool ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond) const;
+    bool reverseBranchCondition(
+        SmallVectorImpl<MachineOperand> &Cond) const override;
 
-    virtual bool AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
-                               MachineBasicBlock *&FBB,
-                               SmallVectorImpl<MachineOperand> &Cond,
-                               bool AllowModify) const;
+    bool analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
+                       MachineBasicBlock *&FBB,
+                       SmallVectorImpl<MachineOperand> &Cond,
+                       bool AllowModify = false) const override;
 
-    virtual unsigned RemoveBranch(MachineBasicBlock &MBB) const;
+    unsigned removeBranch(MachineBasicBlock &MBB,
+                          int *BytesRemoved = nullptr) const override;
 
-    virtual unsigned InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
-                                  MachineBasicBlock *FBB,
-                                  const SmallVectorImpl<MachineOperand> &Cond,
-                                  DebugLoc DL) const;
+    unsigned insertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
+                          MachineBasicBlock *FBB,
+                          ArrayRef<MachineOperand> Cond, const DebugLoc &DL,
+                          int *BytesAdded = nullptr) const override;
    };
 }
 

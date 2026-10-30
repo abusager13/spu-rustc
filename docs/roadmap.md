@@ -68,8 +68,14 @@ cover the low byte, a mixed pattern, and all ones.
 Straight-line LLVM `select i1` with `i32` arms lowers to SPU `selb`. When an
 `icmp` result feeds a select, the compare mask stays all-ones/all-zero; a
 standalone returned Rust `bool` remains normalized to 0 or 1. This does not
-add general LLVM branches, loops, or `phi`-node support. Emulator cases cover
-both selected arms and both arms computing an arithmetic result.
+add general control-flow support to the experimental translator. The separate
+maintained LLVM backend now passes Rust-generated signed and unsigned `i32 >`
+branches through `cgt`/`clgt` and `brnz`, stack-backed merges, and both emulator
+outcomes. Signed and unsigned `i16 >` branches now use `cgth`/`clgth` and
+`brhnz`; a GCC caller checks narrow returns across the C ABI. A stack-backed
+Rust `u32` while loop now runs for inputs 0, 1, 5, and 10. See the LLVM backend
+record below. Other loop shapes, branch predicates, and general `phi`-node
+lowering remain unvalidated.
 Local-store access accepts aligned `u32` loads and stores through named
 opaque-pointer parameters. Loads lower to `ori`, `lqd`, and `rotqby`; stores
 lower to `lqd`, `cwd`, `shufb`, and `stqd`, following SPU GCC's sequence for
@@ -147,11 +153,26 @@ execution gate is passed.
    The maintained port has started in `backend/llvm/CellSPU/`, pinned to LLVM
    23.1.1 to match the project's rustc. A repeatable test now generates its
    TableGen descriptions and adds the `cellspu` triple against that release.
-   Focused builds now compile the target-machine, subtarget, register, frame,
-   instruction, and MC target-description files. The SelectionDAG lowering and
-   selector still have extensive API mismatches and the assembly printer remains
-   unported, so no LLVM-generated SPU assembly or object is validated. See
-   `backend/llvm/README.md` for the current boundary and reproduction command.
+   The full code-generation library and `llc` now build. The pinned host rustc
+   emits LLVM IR from a `#![no_std]` fixture; the harness replaces the host
+   triple and data layout with CellSPU's big-endian, 32-bit-pointer values
+   before the custom `llc` compiles it. Machine verification passes. LLVM
+   directly emits the tested ELF objects, and GNU SPU binutils link an
+   ELF32 big-endian `EM_SPU` executable. The pinned emulator returns
+   ninety-one expected mailbox words, including wrapping `u32` multiplication,
+   `swap_bytes`, all four zero/one count methods, `count_ones`, both rotate directions, and
+   immediate and explicitly
+   masked variable left, logical-right, and arithmetic-right `i32` shifts;
+   both outcomes of all ten signed and unsigned Rust `i32` and `i16` comparison
+   branches; an unoptimized stack-backed loop; an optimized loop with
+   loop-carried `phi` values and a helper call; narrow return values through a
+   GCC ABI caller; and unsafe local-store pointer loads and stores that
+   preserve adjacent words. A 73rd `u32` argument passes through GCC-to-Rust,
+   Rust forwarding, and a Rust-generated call with constant arguments.
+   This validates a narrow Rust-source-to-LLVM path, not a maintained
+   `rustc --target=spu` route. LLVM directly emits ELF objects for the tested
+   subset; the MC encoder and relocation support remain incomplete. See
+   `backend/llvm/README.md` for the reproduction command and exact limits.
 
 6. **Prove target code generation and ELF correctness.** Define and test the
    `spu-sony-ps3` target contract: SPU ISA, triple, data layout, calling

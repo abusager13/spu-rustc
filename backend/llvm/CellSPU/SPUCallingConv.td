@@ -43,9 +43,9 @@ def CCC_SPU : CallingConv<[
                            R48, R49, R50, R51, R52, R53, R54, R55, R56,
                            R57, R58, R59, R60, R61, R62, R63, R64, R65,
                            R66, R67, R68, R69, R70, R71, R72, R73, R74]>>,
-  // Integer/FP values get stored in stack slots that are 8 bytes in size and
-  // 8-byte aligned if there are no more registers to hold them.
-  CCIfType<[i32, i64, f32, f64], CCAssignToStack<8, 8>>,
+  // The maintained SPU GCC ABI assigns every overflow argument a 16-byte
+  // slot, including scalar integers and floating-point values.
+  CCIfType<[i8, i16, i32, i64, f32, f64], CCAssignToStack<16, 16>>,
 
   // Vectors get 16-byte stack slots that are 16-byte aligned.
   CCIfType<[v16i8, v8i16, v4i32, v2i64, v4f32, v2f64],

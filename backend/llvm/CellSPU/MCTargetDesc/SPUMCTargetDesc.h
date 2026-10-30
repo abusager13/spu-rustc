@@ -14,10 +14,27 @@
 #ifndef SPUMCTARGETDESC_H
 #define SPUMCTARGETDESC_H
 
+#include <memory>
+
 namespace llvm {
 class Target;
+class MCAsmBackend;
+class MCCodeEmitter;
+class MCContext;
+class MCInstrInfo;
+class MCObjectTargetWriter;
+class MCRegisterInfo;
+class MCSubtargetInfo;
+class MCTargetOptions;
 
 extern Target TheCellSPUTarget;
+
+MCCodeEmitter *createSPUMCCodeEmitter(const MCInstrInfo &II, MCContext &Ctx);
+MCAsmBackend *createSPUAsmBackend(const Target &T,
+                                  const MCSubtargetInfo &STI,
+                                  const MCRegisterInfo &MRI,
+                                  const MCTargetOptions &Options);
+std::unique_ptr<MCObjectTargetWriter> createSPUELFObjectWriter();
 
 } // End llvm namespace
 

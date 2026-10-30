@@ -21,18 +21,17 @@ SPULinuxMCAsmInfo::SPULinuxMCAsmInfo(const Triple &TT,
                                      const MCTargetOptions &Options)
     : MCAsmInfoELF(Options) {
   IsLittleEndian = false;
+  MinInstAlignment = 4;
 
   ZeroDirective = "\t.space\t";
   Data64bitsDirective = "\t.quad\t";
   AlignmentIsInBytes = false;
 
-  PCSymbol = ".";
   CommentString = "#";
-  GlobalPrefix = "";
-  PrivateGlobalPrefix = ".L";
+  InternalSymbolPrefix = ".L";
 
   // Has leb128
-  HasLEB128 = true;
+  HasLEB128Directives = true;
 
   SupportsDebugInformation = true;
 

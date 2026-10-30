@@ -16,5 +16,6 @@ Target llvm::TheCellSPUTarget;
 
 extern "C" void LLVMInitializeCellSPUTargetInfo() {
   RegisterTarget<Triple::cellspu>
-    X(TheCellSPUTarget, "cellspu", "STI CBEA Cell SPU [experimental]");
+    X(TheCellSPUTarget, "cellspu", "STI CBEA Cell SPU [experimental]",
+      "CellSPU");
 }

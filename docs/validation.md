@@ -451,6 +451,118 @@ in this repository.
    config also rejects SPU. There is no tested stock version pairing; the
    likely compatibility experiment is to backport the required JIT APIs to the
    SPU-capable GCC 9.5 build. This route has not yet been implemented.
+54. Ported the historical CellSPU selector, lowering, and assembly-printer
+   sources far enough to build the full `LLVMCellSPUCodeGen` library and
+   `llc` against LLVM 23.1.1 commit
+   `6dfe1677ab8dffbc6ec13d53a1e0215d75147689`. A runtime crash on the first
+   function traced to LLVM 23 querying `SelectionDAGTargetInfo` for a target
+   return node when the historical subtarget supplied none; adding the default
+   target DAG-info object fixed the failure.
+55. Added `scripts/test-llvm-cellspu-backend.sh`. Pinned host rustc compiled a
+   `#![no_std]` scalar fixture to host-target LLVM IR; the custom `llc` was
+   explicitly retargeted to CellSPU and compiled add, subtract, AND, OR, XOR,
+   increment, constant return, and equality with `-verify-machineinstrs`. GNU
+   SPU binutils assembled the output, verified its ELF32 big-endian relocatable
+   object with machine `SPU`, and linked an entry wrapper to `ET_EXEC`. The
+   emulator program reached `stop` and wrote nine expected words to outbound
+   mailbox channel 28, including `0x000068ac` for addition and normalized
+   `1`/`0` for equality. This is not `rustc --target=spu`; the smoke fixture
+   contains no pointers. The emulator ran in the test's temporary directory so
+   its default local-store dump did not affect repository files.
+56. Tried LLVM's direct `llc -filetype=obj` path; it reports
+   `createMCCodeEmitter failed`. LLVM object emission remains unsupported and
+   the working path uses the GNU SPU assembler and linker. The smoke path starts
+   with Rust source compiled by host rustc, then retargets that IR with custom
+   `llc`; it does not demonstrate a maintained `rustc --target=spu`, SPU
+   `core`, or PPU loading.
+57. Extended `scripts/test-llvm-cellspu-backend.sh` with unoptimized Rust
+   `max_u32` and `max_i32` conditionals. LLVM's `BR_CC` legalization was keyed to the compared
+   type, so correcting the backend action from `MVT::Other` to `MVT::i32` let
+   the existing compare-and-branch patterns select `clgt` and `brnz`. The new
+   path exposed invalid memory-effect flags on the generated stack-slot
+   read/modify/write, malformed frame-save store operands, and branch-analysis
+   hooks whose historical names did not override LLVM 23's lowercase APIs;
+   these were corrected. `llc -verify-machineinstrs` now passes, GNU SPU
+   binutils assemble and link the object, and the emulator returns `0x5678`
+   and `0x9876` for the unsigned false and true paths, plus `5` and `7` for
+   signed paths across zero. The wrapper initializes `$sp` to `0x3f000`, inside
+   the 256 KiB local store. The repeatable script passed with all thirteen
+   mailbox results. A separate Rust `max_u16` probe still fails selection at
+   `i16 BR_CC`; that type needs branch-compare lowering. The tested paths cover
+   signed and unsigned i32 greater-than branches and their generated stack
+   frames, not loops, general `phi`, pointer-memory, or complete ABI support.
+58. The first Rust pointer load/store probe exposed a post-register-allocation
+   crash: the historical `copyPhysReg` declaration did not override LLVM 23's
+   current hook, so copy expansion reached LLVM's unreachable default. Updated
+   the backend method signature and renamable-register handling. The smoke
+   fixture now includes unsafe `*const u32` and `*mut u32` functions. Since
+   host rustc emits the host data layout, the script explicitly rewrites the
+   module triple and data layout to CellSPU's big-endian, 32-bit-pointer
+   layout before `llc`; this remains a bootstrap test, not a rustc target.
+   The wrapper loads the first and fourth words of a 16-byte local-store block,
+   stores `0xaabbccdd` into the second word, then reloads all four. The three
+   neighboring values remain unchanged. Machine verification, assembly, link,
+   and emulator execution pass; the full mailbox now contains nineteen
+   expected words. This covers aligned word accesses within one quadword only.
+59. Added direct LLVM `BR_CC` TableGen patterns for signed and unsigned i16
+   greater-than conditions. Expanding or promoting `BR_CC i16` through LLVM's
+   generic legalization left an unselectable `i32 SETCC` over i16 operands;
+   the direct patterns select native `cgth`/`clgth` followed by `brhnz`.
+   Rust `max_i16` and `max_u16` functions now exercise both branch outcomes.
+   A test-only C caller compiled with SPU GCC consumes and widens their narrow
+   return values, validating that ABI boundary against the GNU toolchain. The
+   repeatable smoke script checks the instructions and emulator results `5`,
+   `7`, `0x5678`, and `0x9876`; all twenty-three mailbox results pass. This
+   covers only signed and unsigned greater-than branch predicates, not other
+   i16 comparisons or the full narrow-integer ABI.
+60. Added an unoptimized Rust `sum_to_n` function with a `while i < n` loop to
+   the backend smoke fixture. The generated IR uses stack-backed loop values;
+   the backend selects the unsigned comparison, loop backedge, and branch
+   layout. `llc -verify-machineinstrs`, GNU assembly/link, and emulator
+   execution pass. Inputs `0`, `1`, `5`, and `10` return `0`, `0`, `10`, and
+   `45`, respectively. The repeatable smoke test now checks twenty-seven
+   mailbox results. This exercises one stack-backed loop shape; it does not
+   validate optimized loops or general LLVM `phi` lowering.
+61. Added an optimized Rust loop with two loop-carried `phi` values and a
+   no-inline helper call. LLVM 23's call-frame pseudos needed both frame-size
+   operands, and the historical SPU frame-pseudo removal hook had moved from
+   register info to frame lowering. Ported those pieces and included the return
+   registers as operands of the SPU return node so post-register-allocation
+   cleanup keeps a helper's result live. The function now passes
+   `-verify-machineinstrs`, assembles and links, and returns `0`, `3`, `7`, `25`,
+   and `75` for inputs `0`, `1`, `2`, `5`, and `10` in the emulator. The repeatable
+   smoke test now checks thirty-two mailbox results. This exercises one
+   optimized loop shape and ordinary helper call; it does not establish general
+   loop, call, or `phi` support.
+62. Added branch fixtures for the remaining `i32` comparison predicates. Both
+   true and false cases now pass for equality, inequality, signed less-than,
+   less-or-equal, greater-or-equal, and unsigned less-than, less-or-equal, and
+   greater-or-equal; existing signed and unsigned greater-than cases complete
+   all ten predicates. The expanded fixture exposed a mailbox checker issue:
+   `od` compressed repeated rows, so the checker now requests uncompressed
+   output before comparing bytes. Machine verification, SPU assembly and link,
+   and emulator execution pass for all forty-eight expected results. Other
+   `i16` branch predicates remain untested.
+63. Added direct `BR_CC i16` TableGen patterns for equality, inequality, signed
+   less-than/less-or-equal/greater-or-equal, and unsigned
+   less-than/less-or-equal/greater-or-equal. They use native halfword equality
+   or reversed compare operands with the appropriate zero/nonzero halfword
+   branch. The emulator now checks both outcomes of all ten signed and
+   unsigned `i16` comparison predicates as well as all ten `i32` predicates,
+   returning sixty-four expected mailbox words across the complete smoke run.
+64. Reconciled scalar overflow-argument lowering with the installed GCC 9.5
+   SPU ABI. Overflow scalar slots now use 16-byte spacing; outgoing stack stores
+   are chained after `CALLSEQ_START`; and incoming stack arguments receive the
+   caller-linkage-area adjustment when the Rust callee allocates a frame. The
+   target now constructs its per-function `SPUFunctionInfo` through LLVM's
+   `createMachineFunctionInfo` hook. The smoke fixture checks the 73rd `u32`
+   argument in three ways: a GCC call to a Rust leaf, a GCC call to Rust code
+   that forwards all 73 dynamic values to another Rust function, and a
+   Rust-generated call with 72 zero constants plus `0x12345678`. Each path
+   returns `0x12345678` in the emulator. Constant vectors created by call
+   lowering use the existing SPU constant-pool load path. The full smoke run
+   now checks sixty-seven mailbox words. Other overflow scalar widths, vectors,
+   varargs, and the rest of the ABI remain unverified.
 
 The emulator check covers only the exercised SPU instructions and this simple
 local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
@@ -470,11 +582,40 @@ physical hardware.
 - `scripts/test-llvm-cellspu-tablegen.sh` passed against LLVM 23.1.1 commit
   `6dfe1677ab8dffbc6ec13d53a1e0215d75147689`, generating the CellSPU target
   descriptions and applying the pinned big-endian 32-bit CellSPU triple patch.
-- Focused LLVM 23 object compilation passed for the target-machine, subtarget,
-  instruction, register, frame-lowering, and MC target-description translation
-  units. The SelectionDAG lowering and selector still fail on extensive API
-  changes, and the old assembly printer does not compile against the current MC
-  interface.
-  No LLVM `llc` assembly or object is available yet.
-- No SPU emulator executable was installed in this environment, so no runtime
-  check was run for this verification.
+- The LLVM 23.1.1 CellSPU code-generation library and `llc` build successfully;
+  `llc --version` lists `cellspu - STI CBEA Cell SPU [experimental]`.
+- `scripts/test-llvm-cellspu-backend.sh` passed with LLVM 23.1.1 `llc`, GNU SPU
+  binutils 2.22, SPU GCC 9.5.0, and the pinned `anergistic` executable. It
+  compiles `#![no_std]` Rust scalar fixtures, including signed and unsigned
+  32-bit and 16-bit conditionals, generated stack frames, unsafe local-store
+  pointer loads/stores, an unoptimized loop, and an optimized loop with
+  loop-carried values and an in-loop call, to SPU object files directly from
+  LLVM. The harness supplies the CellSPU
+  32-bit-pointer data layout to the host-rustc IR and uses a GCC-compiled C
+  caller to check the narrow return ABI. LLVM emits the objects, which GNU
+  SPU binutils link before emulator execution. Machine verification passed, and
+  the emulator returned ninety-one expected results, including wrapping
+  `u32` multiplication results `0x369d0368` and `0xfffffffc`,
+  `swap_bytes(0x12345678)` returning `0x78563412`,
+  `leading_zeros` results 17 and 32, `trailing_zeros` results 31, 8, and 32,
+  `count_ones` results 13, 32, and 0,
+  `leading_ones` results 8 and 32, and `trailing_ones` results 4 and 32,
+  both rotate directions at count 40,
+  returning `0x34567812` and `0x78123456`, all ten signed and
+  unsigned `i32` and `i16`
+  branch predicates, immediate and explicitly masked variable left,
+  logical-right, and arithmetic-right `i32` shifts, both loop cases, the
+  optimized loop's helper call and return value, narrow C ABI return values,
+  preserved neighboring words after a pointer store, and the 73rd `u32`
+  argument through GCC-to-Rust, Rust forwarding, and Rust constant-argument
+  calls. The script now exercises LLVM's experimental MC code emitter,
+  big-endian assembler backend, and ELF writer. The tested path includes
+  `R_SPU_REL16` helper-call relocations and `R_SPU_ADDR16` constant-pool
+  references. `HBRA` branch hints are emitted as no-ops; other instruction and
+  relocation forms remain unverified. Variable-shift cases explicitly mask
+  counts in Rust and check counts 32, 33, and 36. The smoke check also assembles LLVM's
+  textual output with GNU `spu-as` and confirms the disassembly matches the
+  direct object output after excluding those dropped branch hints. This still
+  does not use a maintained
+  rustc SPU target or build SPU `core`. No PPU loading or hardware execution
+  was tested.

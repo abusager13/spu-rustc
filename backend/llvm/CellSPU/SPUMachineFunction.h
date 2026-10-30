@@ -30,10 +30,18 @@ class SPUFunctionInfo : public MachineFunctionInfo {
   // VarArgsFrameIndex - FrameIndex for start of varargs area.
   int VarArgsFrameIndex;
 
+  /// Stack-passed formal arguments need an extra linkage-area bias when the
+  /// function prologue moves $sp below the caller's stack pointer. These frame
+  /// indices are created consecutively during formal argument lowering.
+  int FirstIncomingArgFrameIndex;
+  int LastIncomingArgFrameIndex;
+
 public:
-  SPUFunctionInfo(MachineFunction& MF)
+  SPUFunctionInfo(const Function &F, const TargetSubtargetInfo *STI)
   : UsesLR(false),
-    VarArgsFrameIndex(0)
+    VarArgsFrameIndex(0),
+    FirstIncomingArgFrameIndex(0),
+    LastIncomingArgFrameIndex(0)
   {}
 
   void setUsesLR(bool U) { UsesLR = U; }
@@ -41,6 +49,17 @@ public:
 
   int getVarArgsFrameIndex() const { return VarArgsFrameIndex; }
   void setVarArgsFrameIndex(int Index) { VarArgsFrameIndex = Index; }
+
+  void addIncomingArgFrameIndex(int Index) {
+    if (FirstIncomingArgFrameIndex == 0)
+      FirstIncomingArgFrameIndex = Index;
+    LastIncomingArgFrameIndex = Index;
+  }
+  bool isIncomingArgFrameIndex(int Index) const {
+    return FirstIncomingArgFrameIndex != 0 &&
+           Index <= FirstIncomingArgFrameIndex &&
+           Index >= LastIncomingArgFrameIndex;
+  }
 };
 
 } // end of namespace llvm

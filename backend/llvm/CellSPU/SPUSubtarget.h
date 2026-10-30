@@ -17,6 +17,7 @@
 #include "SPUFrameLowering.h"
 #include "SPUInstrInfo.h"
 #include "SPUISelLowering.h"
+#include "llvm/CodeGen/SelectionDAGTargetInfo.h"
 #include "llvm/CodeGen/TargetSubtargetInfo.h"
 #include "llvm/MC/MCInstrItineraries.h"
 #include <string>
@@ -57,6 +58,7 @@ namespace llvm {
     SPUInstrInfo InstrInfo;
     SPUFrameLowering FrameLowering;
     SPUTargetLowering TLInfo;
+    SelectionDAGTargetInfo DAGInfo;
 
   public:
     /// This constructor initializes the data members to match that
@@ -94,6 +96,9 @@ namespace llvm {
     }
     const TargetRegisterInfo *getRegisterInfo() const override {
       return &RegisterInfo;
+    }
+    const SelectionDAGTargetInfo *getSelectionDAGInfo() const override {
+      return &DAGInfo;
     }
 
     /// Use large memory addressing predicate

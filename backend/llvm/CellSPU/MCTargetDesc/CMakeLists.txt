@@ -1,4 +1,8 @@
 add_llvm_component_library(LLVMCellSPUDesc
+  SPUAsmBackend.cpp
+  SPUELFObjectWriter.cpp
+  SPUMCCodeEmitter.cpp
+  SPUInstPrinter.cpp
   SPUMCTargetDesc.cpp
   SPUMCAsmInfo.cpp
 

@@ -121,17 +121,21 @@ SPUInstrInfo::isStoreToStackSlot(const MachineInstr *MI,
 }
 
 void SPUInstrInfo::copyPhysReg(MachineBasicBlock &MBB,
-                               MachineBasicBlock::iterator I, DebugLoc DL,
-                               unsigned DestReg, unsigned SrcReg,
-                               bool KillSrc) const
+                               MachineBasicBlock::iterator I,
+                               const DebugLoc &DL, Register DestReg,
+                               Register SrcReg, bool KillSrc,
+                               bool RenamableDest,
+                               bool RenamableSrc) const
 {
   // We support cross register class moves for our aliases, such as R3 in any
   // reg class to any other reg class containing R3.  This is required because
   // we instruction select bitconvert i64 -> f64 as a noop for example, so our
   // types have no specific meaning.
 
-  BuildMI(MBB, I, DL, get(SPU::LRr128), DestReg)
-    .addReg(SrcReg, getKillRegState(KillSrc));
+  MachineInstrBuilder Copy = BuildMI(MBB, I, DL, get(SPU::LRr128), DestReg)
+    .addReg(SrcReg, getKillRegState(KillSrc) |
+                        getRenamableRegState(RenamableSrc));
+  Copy->getOperand(0).setIsRenamable(RenamableDest);
 }
 
 void
@@ -206,7 +210,7 @@ SPUInstrInfo::loadRegFromStackSlot(MachineBasicBlock &MBB,
   CellSPU than what's currently done here.
  */
 bool
-SPUInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
+SPUInstrInfo::analyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
                             MachineBasicBlock *&FBB,
                             SmallVectorImpl<MachineOperand> &Cond,
                             bool AllowModify) const {
@@ -263,6 +267,10 @@ SPUInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
     Cond.push_back(MachineOperand::CreateImm(SecondLastInst->getOpcode()));
     Cond.push_back(SecondLastInst->getOperand(0));
     FBB = LastInst->getOperand(0).getMBB();
+    if (AllowModify && MBB.isLayoutSuccessor(FBB)) {
+      LastInst->eraseFromParent();
+      FBB = nullptr;
+    }
     return false;
   }
 
@@ -281,49 +289,73 @@ SPUInstrInfo::AnalyzeBranch(MachineBasicBlock &MBB, MachineBasicBlock *&TBB,
 }
 
 // search MBB for branch hint labels and branch hit ops
-static void removeHBR( MachineBasicBlock &MBB) {
+static unsigned removeHBR(MachineBasicBlock &MBB) {
+  unsigned RemovedInstructions = 0;
   for (MachineBasicBlock::iterator I = MBB.begin(); I != MBB.end(); ++I){
     if (I->getOpcode() == SPU::HBRA ||
         I->getOpcode() == SPU::HBR_LABEL){
+      if (I->getOpcode() == SPU::HBRA)
+        ++RemovedInstructions;
       I=MBB.erase(I);
       if (I == MBB.end())
         break;
     }
   }
+  return RemovedInstructions;
 }
 
 unsigned
-SPUInstrInfo::RemoveBranch(MachineBasicBlock &MBB) const {
+SPUInstrInfo::removeBranch(MachineBasicBlock &MBB,
+                           int *BytesRemoved) const {
+  unsigned Removed = removeHBR(MBB);
   MachineBasicBlock::iterator I = MBB.end();
-  removeHBR(MBB);
-  if (I == MBB.begin())
-    return 0;
+  if (I == MBB.begin()) {
+    if (BytesRemoved)
+      *BytesRemoved = Removed * 4;
+    return Removed;
+  }
   --I;
   while (I->isDebugValue()) {
-    if (I == MBB.begin())
-      return 0;
+    if (I == MBB.begin()) {
+      if (BytesRemoved)
+        *BytesRemoved = Removed * 4;
+      return Removed;
+    }
     --I;
   }
-  if (!isCondBranch(&*I) && !isUncondBranch(&*I))
-    return 0;
+  if (!isCondBranch(&*I) && !isUncondBranch(&*I)) {
+    if (BytesRemoved)
+      *BytesRemoved = Removed * 4;
+    return Removed;
+  }
 
   // Remove the first branch.
   LLVM_DEBUG(errs() << "Removing branch:                ");
   LLVM_DEBUG(I->dump());
   I->eraseFromParent();
+  ++Removed;
   I = MBB.end();
-  if (I == MBB.begin())
-    return 1;
+  if (I == MBB.begin()) {
+    if (BytesRemoved)
+      *BytesRemoved = Removed * 4;
+    return Removed;
+  }
 
   --I;
-  if (!(isCondBranch(&*I) || isUncondBranch(&*I)))
-    return 1;
+  if (!(isCondBranch(&*I) || isUncondBranch(&*I))) {
+    if (BytesRemoved)
+      *BytesRemoved = Removed * 4;
+    return Removed;
+  }
 
   // Remove the second branch.
   LLVM_DEBUG(errs() << "Removing second branch:         ");
   LLVM_DEBUG(I->dump());
   I->eraseFromParent();
-  return 2;
+  ++Removed;
+  if (BytesRemoved)
+    *BytesRemoved = Removed * 4;
+  return Removed;
 }
 
 /** Find the optimal position for a hint branch instruction in a basic block.
@@ -344,10 +376,10 @@ static MachineBasicBlock::iterator findHBRPosition(MachineBasicBlock &MBB)
 }
 
 unsigned
-SPUInstrInfo::InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
+SPUInstrInfo::insertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
                            MachineBasicBlock *FBB,
-                           const SmallVectorImpl<MachineOperand> &Cond,
-                           DebugLoc DL) const {
+                           ArrayRef<MachineOperand> Cond,
+                           const DebugLoc &DL, int *BytesAdded) const {
   // Shouldn't be a fall through.
   assert(TBB && "InsertBranch must not be told to insert a fallthrough");
   assert((Cond.size() == 2 || Cond.size() == 0) &&
@@ -363,8 +395,11 @@ SPUInstrInfo::InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
   if (haveHBR)
     MIB = BuildMI(&MBB, DL, get(SPU::HBR_LABEL)).addSym(branchLabel);
 
-  // One-way branch.
-  if (FBB == 0) {
+  // One-way branch or a conditional branch whose false edge is the layout
+  // successor. In the latter case SPU control naturally falls through; an
+  // explicit second branch would add another odd-pipe terminator and force
+  // the nop filler to place an illegal instruction between terminators.
+  if (FBB == 0 || (!Cond.empty() && MBB.isLayoutSuccessor(FBB))) {
     if (Cond.empty()) {
       // Unconditional branch
       MIB = BuildMI(&MBB, DL, get(SPU::BR));
@@ -393,6 +428,8 @@ SPUInstrInfo::InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
       LLVM_DEBUG(errs() << "Inserted one-way cond branch:   ");
       LLVM_DEBUG((*MIB).dump());
     }
+    if (BytesAdded)
+      *BytesAdded = 4;
     return 1;
   } else {
     MIB = BuildMI(&MBB, DL, get(Cond[0].getImm()));
@@ -412,13 +449,15 @@ SPUInstrInfo::InsertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
     LLVM_DEBUG((*MIB).dump());
     LLVM_DEBUG(errs() << "part 2: ");
     LLVM_DEBUG((*MIB2).dump());
-   return 2;
+    if (BytesAdded)
+      *BytesAdded = 8;
+    return 2;
   }
 }
 
 //! Reverses a branch's condition, returning false on success.
 bool
-SPUInstrInfo::ReverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond)
+SPUInstrInfo::reverseBranchCondition(SmallVectorImpl<MachineOperand> &Cond)
   const {
   // Pretty brainless way of inverting the condition, but it works, considering
   // there are only two conditions...

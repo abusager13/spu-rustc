@@ -9,6 +9,7 @@
 
 #include "SPUTargetMachine.h"
 #include "SPU.h"
+#include "SPUMachineFunction.h"
 #include "llvm/CodeGen/Passes.h"
 #include "llvm/CodeGen/TargetLoweringObjectFileImpl.h"
 #include "llvm/CodeGen/TargetPassConfig.h"
@@ -37,6 +38,12 @@ SPUTargetMachine::SPUTargetMachine(const Target &T, const Triple &TT,
   if (JIT)
     report_fatal_error("Cell SPU JIT is unsupported");
   initAsmInfo();
+}
+
+MachineFunctionInfo *SPUTargetMachine::createMachineFunctionInfo(
+    BumpPtrAllocator &Allocator, const Function &F,
+    const TargetSubtargetInfo *STI) const {
+  return SPUFunctionInfo::create<SPUFunctionInfo>(Allocator, F, STI);
 }
 
 namespace {

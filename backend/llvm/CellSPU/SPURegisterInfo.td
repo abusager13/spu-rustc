@@ -19,6 +19,7 @@ class SPUReg<string n> : Register<n> {
 
 class SPUVecReg<bits<7> num, string n> : SPUReg<n> {
   field bits<7> Num = num;
+  let HWEncoding{6-0} = num;
 }
 
 def R0 : SPUVecReg<0, "$lr">, DwarfRegNum<[0]>;

@@ -78,7 +78,7 @@ namespace llvm {
                               const SPUTargetMachine &TM);
     //! Simplify a EVT::v2i64 constant splat to CellSPU-ready form
     SDValue LowerV2I64Splat(EVT OpVT, SelectionDAG &DAG, uint64_t splat,
-                             DebugLoc dl);
+                             SDLoc dl);
   }
 
   class SPUTargetMachine;            // forward dec'l.
@@ -107,9 +107,8 @@ namespace llvm {
     virtual const char *getTargetNodeName(unsigned Opcode) const;
 
     /// getSetCCResultType - Return the ValueType for ISD::SETCC
-    virtual EVT getSetCCResultType(EVT VT) const;
-
-    virtual MVT getShiftAmountTy(EVT LHSTy) const { return MVT::i32; }
+    EVT getSetCCResultType(const DataLayout &DL, LLVMContext &Context,
+                           EVT VT) const override;
 
     //! Custom lowering hooks
     virtual SDValue LowerOperation(SDValue Op, SelectionDAG &DAG) const;
@@ -136,9 +135,9 @@ namespace llvm {
     ConstraintWeight getSingleConstraintMatchWeight(
       AsmOperandInfo &info, const char *constraint) const;
 
-    std::pair<unsigned, const TargetRegisterClass*>
-      getRegForInlineAsmConstraint(const std::string &Constraint,
-                                   EVT VT) const;
+    std::pair<unsigned, const TargetRegisterClass *>
+    getRegForInlineAsmConstraint(const TargetRegisterInfo *TRI,
+                                 StringRef Constraint, MVT VT) const override;
 
     void LowerAsmOperandForConstraint(SDValue Op, std::string &Constraint,
                                       std::vector<SDValue> &Ops,
@@ -155,8 +154,8 @@ namespace llvm {
       LowerFormalArguments(SDValue Chain,
                            CallingConv::ID CallConv, bool isVarArg,
                            const SmallVectorImpl<ISD::InputArg> &Ins,
-                           DebugLoc dl, SelectionDAG &DAG,
-                           SmallVectorImpl<SDValue> &InVals) const;
+                           const SDLoc &dl, SelectionDAG &DAG,
+                           SmallVectorImpl<SDValue> &InVals) const override;
 
     virtual SDValue
       LowerCall(TargetLowering::CallLoweringInfo &CLI,
@@ -167,7 +166,7 @@ namespace llvm {
                   CallingConv::ID CallConv, bool isVarArg,
                   const SmallVectorImpl<ISD::OutputArg> &Outs,
                   const SmallVectorImpl<SDValue> &OutVals,
-                  DebugLoc dl, SelectionDAG &DAG) const;
+                  const SDLoc &dl, SelectionDAG &DAG) const override;
 
     virtual bool isLegalICmpImmediate(int64_t Imm) const;
 

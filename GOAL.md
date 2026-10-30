@@ -106,10 +106,26 @@ The current compiler/backend direction is to port and modernize LLVM's
 historical CellSPU backend, using the PS3 GNU toolchain as the assembler,
 linker, and ABI reference. The target source now lives under
 `backend/llvm/CellSPU/` and its TableGen descriptions generate against the
-LLVM 23.1.1 release used by the pinned rustc. The C++ backend does not yet
-compile against that LLVM version, and no `llc` SPU assembly or LLVM-emitted
-SPU object has been validated. The translator remains the only maintained
-Rust-to-SPU end-to-end compiler path. See
+LLVM 23.1.1 release used by the pinned rustc. The complete code-generation
+library and `llc` build, and the backend compiles a narrow Rust-generated
+scalar subset directly to SPU ELF objects. GNU SPU binutils link it to an ELF32
+big-endian `EM_SPU` executable. The pinned emulator checks ninety-one
+results, including wrapping `u32` multiplication, `swap_bytes`, `leading_zeros`,
+`trailing_zeros`, `leading_ones`, `trailing_ones`, `count_ones`, both rotate
+directions, and immediate and explicitly masked variable left,
+logical-right, and arithmetic-right `i32` shifts,
+both outcomes of all ten signed and unsigned `i32` and `i16` branches; an
+unoptimized `while` loop; an optimized loop with loop-carried `phi` values and
+a helper call; 16-bit returns through a GCC ABI caller; and unsafe raw-pointer
+`u32` local-store loads and stores. The 73rd `u32` argument also passes through
+GCC-to-Rust, Rust forwarding, and a Rust call with constant arguments. The smoke harness
+replaces host IR's data layout and triple with the CellSPU values before `llc`;
+this is not a maintained rustc target. LLVM's MC emitter, assembler backend,
+and ELF writer cover only the tested instruction and relocation subset.
+The translator remains a separate validation harness, not the primary
+compiler. This is still host `rustc` LLVM IR retargeted with a custom `llc`,
+not `rustc --target=spu`; SPU `core`, full ABI support, and broader LLVM object
+emission remain future work. See
 [the LLVM backend port](backend/llvm/README.md),
 [the architecture investigation](docs/architecture.md), and
 [the milestone plan](docs/roadmap.md).

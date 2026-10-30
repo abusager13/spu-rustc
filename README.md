@@ -16,6 +16,24 @@ from the PS3 development toolchain. It does **not** add an official
 `rustc --target=spu-sony-ps3` target or a general Rust backend. Its `--target`
 flag names the prototype's output architecture.
 
+The maintained LLVM target is being developed separately under
+[`backend/llvm`](backend/llvm/README.md). Its C++ code implements LLVM's
+CellSPU target interfaces, which are written in C++; rustc uses that layer for
+instruction selection and object generation. It runs inside the compiler, while
+the project's source language and frontend remain Rust. A smoke check starts
+from `#![no_std]` Rust functions: host `rustc` emits LLVM IR, then the harness
+replaces its host triple and data layout with the CellSPU big-endian, 32-bit
+pointer values before custom `llc` directly emits SPU object files for the
+tested subset. GNU `spu-ld` links the result, which the pinned emulator
+executes. The fixture tests scalar operations, wrapping `u32` multiplication,
+immediate `i32` shifts and variable shifts with an explicit five-bit count
+mask, `rotate_left`, `rotate_right`, `swap_bytes`, `leading_zeros`,
+`trailing_zeros`, `leading_ones`, `trailing_ones`, `count_ones`, signed and
+unsigned `i32` and `i16` branches, unsafe raw pointer `u32` loads
+and stores in local store, and a
+separate optimized loop with loop-carried values and a call in its body. This
+does not provide `rustc --target=spu` or build `core` for SPU.
+
 Supported scalar functions have zero to 75 32-bit ABI parameters: integer
 values or pointers interpreted as 32-bit local-store addresses, with 72
 register-passed parameters and up to three stack-passed arguments. They support
@@ -66,9 +84,20 @@ reversal, byte swapping, wrapping absolute value, signed and unsigned min/max,
 signed and unsigned saturating addition and subtraction, conditional
 selection, three- and eight-argument sums, shifts, signed and unsigned
 comparisons, and aligned local-store word loads and stores.
-A Rust conditional expression is supported only when host `rustc` lowers it to
-straight-line LLVM `select`; general branches, loops, and `phi` nodes remain
-unsupported.
+The experimental translator handles a Rust conditional expression only when
+host `rustc` lowers it to straight-line LLVM `select`. Separately, the
+maintained LLVM backend compiles all ten signed and unsigned `i32` and `i16`
+comparison branch predicates to native SPU code, with both outcomes checked.
+A GCC-compiled caller also verifies signed and
+unsigned 16-bit return values across the SPU C ABI. Its memory smoke case
+stores one word through a raw pointer and confirms the other words in the same
+local-store quadword are preserved. A separate `-O1` loop with loop-carried
+`phi` values and a helper call is checked for inputs 0, 1, 2, 5, and 10. The
+smoke check also verifies the 73rd `u32` argument from GCC into Rust, through a
+Rust-generated forwarding call, and in a direct Rust call with constant
+arguments. Other loop shapes, general pointer arithmetic, and general `phi`
+lowering remain unvalidated. See
+[`backend/llvm`](backend/llvm/README.md).
 A separate minimal `_start` example can be linked to an SPU ELF executable; it
 immediately runs the native SPU `stop 0` instruction. See [`examples`](examples)
 and the design notes in [`docs`](docs).
