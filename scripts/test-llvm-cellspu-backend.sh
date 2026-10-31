@@ -622,6 +622,36 @@ pub extern "C" fn rust_f64_sub(lhs: f64, rhs: f64) -> f64 {
 pub extern "C" fn rust_f64_mul(lhs: f64, rhs: f64) -> f64 {
     lhs * rhs
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f32_eq(lhs: f32, rhs: f32) -> bool {
+    lhs == rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f32_gt(lhs: f32, rhs: f32) -> bool {
+    lhs > rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f32_le(lhs: f32, rhs: f32) -> bool {
+    lhs <= rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f64_eq(lhs: f64, rhs: f64) -> bool {
+    lhs == rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f64_gt(lhs: f64, rhs: f64) -> bool {
+    lhs > rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f64_le(lhs: f64, rhs: f64) -> bool {
+    lhs <= rhs
+}
 RUST
 "$rustc" --crate-type=lib --emit=llvm-ir -C panic=abort -C opt-level=1 \
     -o "$tmp/float_math.ll" "$tmp/float_math.rs"
@@ -1517,7 +1547,7 @@ compare_direct_and_gnu_encoding dynamic_shift_large
 compare_direct_and_gnu_encoding float_math
 
 float_math_disassembly=$("$spu_objdump" -d "$tmp/float_math.o")
-for instruction in fa fs fm dfa dfs dfm; do
+for instruction in fa fs fm dfa dfs dfm fceq fcgt; do
     if ! grep -Eq "[[:space:]]${instruction}[[:space:]]" \
             <<<"$float_math_disassembly"; then
         printf '%s\n' "$float_math_disassembly" >&2

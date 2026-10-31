@@ -860,3 +860,11 @@ physical hardware.
   point argument/return ABI behavior, or runtime results. The full LLVM smoke
   suite still passed its 116 emulator results, vector ABI cases, division
   checks, and large-memory pointer image.
+- Extended the scalar floating-point fixture with Rust `f32` equality,
+  greater-than, and less-equal, plus the same `f64` predicates. The CellSPU
+  emitter now encodes the selected `fceq` and `fcgt` instructions; for `f64`,
+  the current target lowers comparisons to integer instructions (including a
+  newly encoded `nand` used by the lowering). Direct LLVM object disassembly
+  matches GNU SPU assembler output and passes machine verification. Runtime
+  probes report `fceq` and `fcgt` as unknown instructions, so comparison results
+  and NaN behavior remain unverified; the FP ABI remains open.

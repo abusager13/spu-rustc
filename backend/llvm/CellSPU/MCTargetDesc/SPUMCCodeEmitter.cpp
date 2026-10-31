@@ -109,6 +109,8 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RR(0x58200000);
     if (Name.starts_with("AND"))
       return RR(0x18200000);
+    if (Name.starts_with("NAND"))
+      return RR(0x19200000);
     if (Name.starts_with("ORI"))
       return RI10(0x04000000, 2, 1, 0, 10, 0);
     if (Name.starts_with("OR"))
@@ -166,6 +168,10 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RR(0x59a00000);
     if (Name == "FMf64")
       return RR(0x59c00000);
+    if (Name == "FCEQf32")
+      return RR(0x78400000);
+    if (Name == "FCGTf32")
+      return RR(0x58400000);
     if (Name == "CGr32" || Name == "CGr64" || Name == "CGv2i64" ||
         Name == "CGv4i32")
       return RR(0x18400000);
