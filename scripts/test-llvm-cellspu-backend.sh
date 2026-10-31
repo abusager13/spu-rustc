@@ -500,9 +500,52 @@ pub extern "C" fn sum_steps_opt(n: u32) -> u32 {
     }
     total
 }
+
+#[unsafe(no_mangle)]
+pub extern "C" fn select_slt_i64(a: i64, b: i64) -> u64 {
+    if a < b { 0x1234_5678_9abc_def0 } else { 0xfedc_ba98_7654_3210 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn select_sle_i64(a: i64, b: i64) -> u64 {
+    if a <= b { 0x1234_5678_9abc_def0 } else { 0xfedc_ba98_7654_3210 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn select_sgt_i64(a: i64, b: i64) -> u64 {
+    if a > b { 0x1234_5678_9abc_def0 } else { 0xfedc_ba98_7654_3210 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn select_sge_i64(a: i64, b: i64) -> u64 {
+    if a >= b { 0x1234_5678_9abc_def0 } else { 0xfedc_ba98_7654_3210 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn select_ult_u64(a: u64, b: u64) -> u64 {
+    if a < b { 0x1234_5678_9abc_def0 } else { 0xfedc_ba98_7654_3210 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn select_eq_u64(a: u64, b: u64) -> u64 {
+    if a == b { 0x1234_5678_9abc_def0 } else { 0xfedc_ba98_7654_3210 }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn select_slt_i32_to_u64(a: i32, b: i32) -> u64 {
+    if a < b { 0x1234_5678_9abc_def0 } else { 0xfedc_ba98_7654_3210 }
+}
 RUST
 "$rustc" --crate-type=lib --emit=llvm-ir -C panic=abort -C opt-level=1 \
     -o "$tmp/optimized_loop.ll" "$tmp/optimized_loop.rs"
+for function in select_slt_i64 select_sle_i64 select_sgt_i64 select_sge_i64 \
+    select_ult_u64 select_eq_u64 select_slt_i32_to_u64; do
+    if ! sed -n "/define .*@${function}(/,/^}/p" "$tmp/optimized_loop.ll" |
+            grep -Fq 'select i1'; then
+        echo "Rust ${function} fixture did not generate an LLVM select" >&2
+        exit 1
+    fi
+done
 
 cat >"$tmp/vector_abi.rs" <<'RUST'
 #![no_std]
@@ -832,6 +875,13 @@ extern unsigned int branch_ult_u64(unsigned long long lhs, unsigned long long rh
 extern unsigned int branch_ule_u64(unsigned long long lhs, unsigned long long rhs);
 extern unsigned int branch_ugt_u64(unsigned long long lhs, unsigned long long rhs);
 extern unsigned int branch_uge_u64(unsigned long long lhs, unsigned long long rhs);
+extern unsigned long long select_slt_i64(long long lhs, long long rhs);
+extern unsigned long long select_sle_i64(long long lhs, long long rhs);
+extern unsigned long long select_sgt_i64(long long lhs, long long rhs);
+extern unsigned long long select_sge_i64(long long lhs, long long rhs);
+extern unsigned long long select_ult_u64(unsigned long long lhs, unsigned long long rhs);
+extern unsigned long long select_eq_u64(unsigned long long lhs, unsigned long long rhs);
+extern unsigned long long select_slt_i32_to_u64(int lhs, int rhs);
 
 unsigned int gcc_compare_i64(void) {
     long long signed_min = (-9223372036854775807LL - 1LL);
@@ -861,7 +911,116 @@ unsigned int gcc_compare_i64(void) {
     result |= branch_uge_u64(unsigned_low, unsigned_high) << 19;
     return result;
 }
+
+#define CHECK_SIGNED(a, b, lt, eq, gt, code) do { \
+    long long lhs = (a), rhs = (b); \
+    if (branch_eq_u64((unsigned long long)lhs, (unsigned long long)rhs) != (eq) || \
+        branch_ne_u64((unsigned long long)lhs, (unsigned long long)rhs) != !(eq) || \
+        branch_slt_i64(lhs, rhs) != (lt) || \
+        branch_sle_i64(lhs, rhs) != ((lt) || (eq)) || \
+        branch_sgt_i64(lhs, rhs) != (gt) || \
+        branch_sge_i64(lhs, rhs) != ((gt) || (eq))) return (code); \
+    if (select_slt_i64(lhs, rhs) != ((lt) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL)) return 100 + (code); \
+    if (select_sle_i64(lhs, rhs) != (((lt) || (eq)) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL)) return 200 + (code); \
+    if (select_sgt_i64(lhs, rhs) != ((gt) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL)) return 300 + (code); \
+    if (select_sge_i64(lhs, rhs) != (((gt) || (eq)) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL)) return 400 + (code); \
+} while (0)
+
+#define CHECK_UNSIGNED(a, b, lt, eq, gt, code) do { \
+    unsigned long long lhs = (a), rhs = (b); \
+    if (branch_eq_u64(lhs, rhs) != (eq) || \
+        branch_ne_u64(lhs, rhs) != !(eq) || \
+        branch_ult_u64(lhs, rhs) != (lt) || \
+        branch_ule_u64(lhs, rhs) != ((lt) || (eq)) || \
+        branch_ugt_u64(lhs, rhs) != (gt) || \
+        branch_uge_u64(lhs, rhs) != ((gt) || (eq)) || \
+        select_ult_u64(lhs, rhs) != ((lt) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL) || \
+        select_eq_u64(lhs, rhs) != ((eq) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL)) return (code); \
+} while (0)
+
+unsigned int gcc_compare_i64_boundaries(void) {
+    CHECK_SIGNED(0LL, 0x00000000ffffffffLL, 1, 0, 0, 1);
+    CHECK_SIGNED(0x00000000ffffffffLL, 0LL, 0, 0, 1, 2);
+    CHECK_SIGNED(-4294967296LL, -1LL, 1, 0, 0, 3);
+    CHECK_SIGNED(-1LL, -4294967296LL, 0, 0, 1, 4);
+    CHECK_SIGNED(0x7fffffffLL, 0x80000000LL, 1, 0, 0, 5);
+    CHECK_SIGNED(0x80000000LL, 0x7fffffffLL, 0, 0, 1, 6);
+    CHECK_SIGNED(0LL, 0LL, 0, 1, 0, 7);
+    CHECK_SIGNED(-1LL, -1LL, 0, 1, 0, 8);
+    CHECK_SIGNED((-9223372036854775807LL - 1LL), 9223372036854775807LL, 1, 0, 0, 9);
+    CHECK_SIGNED(9223372036854775807LL, (-9223372036854775807LL - 1LL), 0, 0, 1, 10);
+    CHECK_UNSIGNED(0ULL, 0xffffffffULL, 1, 0, 0, 11);
+    CHECK_UNSIGNED(0xffffffffULL, 0ULL, 0, 0, 1, 12);
+    CHECK_UNSIGNED(0xffffffffULL, 0x100000000ULL, 1, 0, 0, 13);
+    CHECK_UNSIGNED(0x100000000ULL, 0xffffffffULL, 0, 0, 1, 14);
+    CHECK_UNSIGNED(0x7fffffffffffffffULL, 0x8000000000000000ULL, 1, 0, 0, 15);
+    CHECK_UNSIGNED(0x8000000000000000ULL, 0x7fffffffffffffffULL, 0, 0, 1, 16);
+    CHECK_UNSIGNED(0xffffffffffffffffULL, 0xffffffffffffffffULL, 0, 1, 0, 17);
+    if (select_slt_i32_to_u64(-1, 0) != 0x123456789abcdef0ULL ||
+        select_slt_i32_to_u64(0, -1) != 0xfedcba9876543210ULL ||
+        select_slt_i32_to_u64(0, 0) != 0xfedcba9876543210ULL) return 18;
+    return 0;
+}
 C
+python3 - "$tmp/i64_compare_bridge.c" <<'PY'
+from pathlib import Path
+import random
+import sys
+
+boundaries = [
+    0, 1, 0x7fffffff, 0x80000000, 0xffffffff,
+    0x100000000, 0x100000001, 0x7fffffffffffffff,
+    0x8000000000000000, 0xffffffff00000000, 0xffffffffffffffff,
+]
+rng = random.Random(0x535055)
+pairs = [(a, b) for a in boundaries for b in boundaries]
+pairs += [(rng.getrandbits(64), rng.getrandbits(64)) for _ in range(64)]
+
+def signed(value):
+    return value if value < (1 << 63) else value - (1 << 64)
+
+def literal(value):
+    value = signed(value)
+    return "(-9223372036854775807LL - 1LL)" if value == -(1 << 63) else f"{value}LL"
+
+rows = []
+for a, b in pairs:
+    sa, sb = signed(a), signed(b)
+    checks = (a == b, a != b, sa < sb, sa <= sb, sa > sb, sa >= sb,
+              a < b, a <= b, a > b, a >= b)
+    expected = sum(int(value) << bit for bit, value in enumerate(checks))
+    rows.append(f"    {{{literal(a)}, {literal(b)}, {expected}u}},")
+
+with Path(sys.argv[1]).open("a") as output:
+    output.write("""
+struct compare_case { long long lhs, rhs; unsigned int expected; };
+static const struct compare_case compare_cases[] = {
+""")
+    output.write("\n".join(rows))
+    output.write("""
+};
+unsigned int gcc_compare_i64_matrix(void) {
+    unsigned int i;
+    for (i = 0; i < sizeof(compare_cases) / sizeof(compare_cases[0]); ++i) {
+        long long a = compare_cases[i].lhs, b = compare_cases[i].rhs;
+        unsigned long long ua = (unsigned long long)a, ub = (unsigned long long)b;
+        unsigned int actual = branch_eq_u64(ua, ub)
+            | (branch_ne_u64(ua, ub) << 1)
+            | (branch_slt_i64(a, b) << 2)
+            | (branch_sle_i64(a, b) << 3)
+            | (branch_sgt_i64(a, b) << 4)
+            | (branch_sge_i64(a, b) << 5)
+            | (branch_ult_u64(ua, ub) << 6)
+            | (branch_ule_u64(ua, ub) << 7)
+            | (branch_ugt_u64(ua, ub) << 8)
+            | (branch_uge_u64(ua, ub) << 9);
+        if (actual != compare_cases[i].expected)
+            return i + 1;
+    }
+    return 0;
+}
+""")
+PY
 "$spu_cc" -O0 -c -o "$tmp/i64_compare_bridge.o" "$tmp/i64_compare_bridge.c"
 
 cat >"$tmp/narrow_memory_bridge.c" <<'C'
@@ -1378,6 +1537,10 @@ _start:
   brsl $lr, swap_bytes
   wrch $ch28, $3
   brsl $lr, gcc_compare_i64
+  wrch $ch28, $3
+  brsl $lr, gcc_compare_i64_boundaries
+  wrch $ch28, $3
+  brsl $lr, gcc_compare_i64_matrix
   wrch $ch28, $3
   ila $3, narrow_fixture
   brsl $lr, gcc_read_u8_samples
@@ -1930,17 +2093,17 @@ expected+=0000246840000000ffffffff
 expected+=00001234
 expected+=369d0368fffffffc
 expected+=00000011000000200000001f00000008000000200000000d000000200000000000000008000000200000000400000020345678127812345678563412
-expected+=00055555
+expected+=000555550000000000000000
 expected+=803768aaff80ffff807fff01133799aaffff807fffffff01ffff99aa
 expected+=000037680012abfe13cdef240000cdef
 expected+=008055aaf00f13cddca118efa1b2c3d4e5f60718
 expected+=f60718ef249abcdee51188f01122334455667788
 expected+=23456789cdf01123
 expected+=5a17c0de
-if [[ "$byte_count" != 464 || "$actual" != "$expected" ]]; then
+if [[ "$byte_count" != 472 || "$actual" != "$expected" ]]; then
     cat "$tmp/emulator.log" >&2
     echo "expected mailbox words $expected; got ${actual:-<empty>} ($byte_count bytes)" >&2
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic and integer division, f32/f64 float codegen, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 116 main results and checked vector ABI and division through 64 bits; GNU SPU assembler matched float encodings, which the emulator cannot execute\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic and integer division, f32/f64 float codegen, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 118 main results and checked vector ABI and division through 64 bits; GNU SPU assembler matched float encodings, which the emulator cannot execute\n'

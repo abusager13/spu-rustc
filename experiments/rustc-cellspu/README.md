@@ -31,6 +31,14 @@ instruction encodings match GNU SPU binutils, and the emulator checks all
 seven arms and five fallback inputs. This does not establish general switch,
 enum, or control-flow support.
 
+An optimized `u64` match checks five arms and six fallback inputs, including
+zero, the low-word sign boundary, and `u64::MAX`. Its zero case exposed a
+signed 64-bit ordering bug in the LLVM target: when the high words matched,
+the low words were compared as signed. The scalar comparison now uses unsigned
+low-word ordering. The emitted comparison instructions match GNU SPU binutils,
+and the emulator checks the results. This remains one match shape and uses the
+experimental Rust ABI route.
+
 A raw-pointer fixture builds a local-store word address from a base pointer and
 runtime index, then loads or stores through it. The generated `cwx`, `lqx`,
 `rotqby`, `shufb`, and `stqx` encodings match GNU SPU binutils. The emulator

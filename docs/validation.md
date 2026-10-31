@@ -868,3 +868,19 @@ physical hardware.
   matches GNU SPU assembler output and passes machine verification. Runtime
   probes report `fceq` and `fcgt` as unknown instructions, so comparison results
   and NaN behavior remain unverified; the FP ABI remains open.
+- Fixed scalar signed `i64` ordering when the high words match and the low
+  words straddle bit 31. The previous sequence compared both words as signed;
+  the strict comparison now uses a signed high word and unsigned low word, and
+  greater-or-equal uses the inverse of the reversed strict comparison. A GCC
+  caller checks all ten signed and unsigned integer comparison predicates for
+  185 deterministic operand pairs, plus explicit boundary cases. The LLVM
+  smoke suite passed 118 mailbox results. The same suite checks optimized Rust
+  `select` expressions whose signed `i64`, unsigned `u64`, equality, or signed
+  `i32` conditions select 64-bit constants. These exposed a separate lowering
+  bug: a scalar comparison mask was not extended across both words of an `i64`
+  result. The backend now sign-extends that zero-or-minus-one mask; the emulator
+  verifies the full selected 64-bit values for boundary cases. A direct-rustc
+  `#![no_core]` optimized `u64` match that previously returned the fallback
+  for zero now passes five arms and six fallbacks in the emulator; its
+  comparison instruction encodings match GNU SPU binutils. These checks do not
+  establish vector comparison, general Rust ABI, `core`, or hardware behavior.

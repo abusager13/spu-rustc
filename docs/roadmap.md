@@ -159,13 +159,16 @@ execution gate is passed.
    before the custom `llc` compiles it. Machine verification passes. LLVM
    directly emits the tested ELF objects, and GNU SPU binutils link an
    ELF32 big-endian `EM_SPU` executable. The pinned emulator returns
-   116 expected mailbox words, including wrapping `u32` multiplication,
+   118 expected mailbox words, including wrapping `u32` multiplication,
    `swap_bytes`, all four zero/one count methods, `count_ones`, both rotate directions, and
    immediate and explicitly
    masked variable left, logical-right, and arithmetic-right `i32` shifts;
    both outcomes of all ten signed and unsigned Rust `i32` and `i16` comparison
    branches; twenty packed `i64` equality, inequality, signed, and unsigned
-   comparison cases; an unoptimized stack-backed loop; an optimized loop with
+   comparison cases and a 185-pair matrix across all ten predicates; an
+   optimized signed/unsigned comparison and equality select returning full
+   64-bit values; an
+   unoptimized stack-backed loop; an optimized loop with
    loop-carried `phi` values and a helper call; narrow return values through a
    GCC ABI caller; `u32` pointer loads/stores; signed and unsigned byte and
    halfword loads; a byte store; packed halfword and doubleword load/stores
@@ -240,9 +243,15 @@ execution gate is passed.
    branch-folder rewrite to lose the false CFG edge. `insertBranch` now keeps
    the explicit destination until final branch cleanup. The LLVM machine
    verifier passes, compare and table encodings match GNU SPU binutils, and
-   the emulator checks all seven arms plus five fallback inputs. These
-   fixtures validate only two integer-match shapes; general switch and enum
-   support remain open.
+   the emulator checks all seven arms plus five fallback inputs. An optimized
+   `u64` match checks five arms and six fallback inputs. It exposed a signed
+   i64 comparison bug for equal high words and low words across the sign
+   boundary; the scalar backend now compares those low words as unsigned.
+   The LLVM smoke fixture also checks signed/unsigned `i64` and equality
+   predicates selecting 64-bit values, plus a signed `i32` predicate selecting
+   a `u64`; lowering now extends the scalar predicate mask across both words.
+   These fixtures validate specific integer-match and selection shapes;
+   general switch and enum support remain open.
 
    A separate raw-pointer fixture forms a runtime-indexed word address and
    exercises `cwx`, `lqx`, `rotqby`, `shufb`, and `stqx`. GNU SPU encodings

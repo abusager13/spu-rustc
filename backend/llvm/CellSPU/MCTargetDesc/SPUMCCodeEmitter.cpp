@@ -111,6 +111,8 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RR(0x18200000);
     if (Name.starts_with("NAND"))
       return RR(0x19200000);
+    if (Name.starts_with("NOR"))
+      return RR(0x09200000);
     if (Name.starts_with("ORI"))
       return RI10(0x04000000, 2, 1, 0, 10, 0);
     if (Name.starts_with("OR"))

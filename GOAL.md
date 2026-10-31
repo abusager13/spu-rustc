@@ -109,13 +109,16 @@ linker, and ABI reference. The target source now lives under
 LLVM 23.1.1 release used by the pinned rustc. The complete code-generation
 library and `llc` build, and the backend compiles a narrow Rust-generated
 scalar subset directly to SPU ELF objects. GNU SPU binutils link it to an ELF32
-big-endian `EM_SPU` executable. The pinned emulator checks 116
+big-endian `EM_SPU` executable. The pinned emulator checks 118
 results, including wrapping `u32` multiplication, `swap_bytes`, `leading_zeros`,
 `trailing_zeros`, `leading_ones`, `trailing_ones`, `count_ones`, both rotate
 directions, and immediate and explicitly masked variable left,
 logical-right, and arithmetic-right `i32` shifts,
 both outcomes of all ten signed and unsigned `i32` and `i16` branches; twenty
-equality, inequality, signed, and unsigned `i64` comparison cases; an
+equality, inequality, signed, and unsigned `i64` comparison cases, including
+all ten predicates across a deterministic matrix of 185 operand pairs; an
+optimized signed/unsigned comparison and equality select returning full-width
+`u64` values; an
 unoptimized `while` loop; an optimized loop with loop-carried `phi` values and
 a helper call; 16-bit returns through a GCC ABI caller; and unsafe raw-pointer
 `u32` local-store loads and stores, signed and unsigned byte and halfword
@@ -172,3 +175,10 @@ through that rewrite; machine verification passes, compare and table
 instruction encodings match GNU SPU binutils, and the emulator checks all
 seven arms plus five fallback inputs. This remains one tested control-flow
 shape; general switch and enum lowering remain unvalidated.
+An optimized direct-rustc `u64` match also checks five arms and six fallbacks.
+It exposed a signed 64-bit comparison bug at the low-word sign boundary; the
+backend now compares equal-high-word low halves as unsigned. The emulator
+checks this fixture and the GCC-to-Rust comparison matrix, without establishing
+general control-flow or ABI support. Optimized conditional selects also exposed
+and now cover extension of scalar predicate masks across both halves of a
+64-bit result.

@@ -29,8 +29,12 @@ executes. The fixture tests scalar operations, wrapping `u32` multiplication,
 immediate `i32` shifts and variable shifts with an explicit five-bit count
 mask, `rotate_left`, `rotate_right`, `swap_bytes`, `leading_zeros`,
 `trailing_zeros`, `leading_ones`, `trailing_ones`, `count_ones`, signed and
-unsigned `i32` and `i16` branches, twenty `i64` comparisons, and a GCC-to-Rust
-`u64` addition call. Local-store pointer cases cover `u32`, narrow scalar, and
+unsigned `i32` and `i16` branches, and `i64` comparisons called from GCC. A
+deterministic matrix checks all ten integer comparison predicates over 185
+64-bit operand pairs, including low-word sign boundaries. Emulator cases also
+check signed and unsigned comparison and equality selects returning full
+64-bit values. A GCC-to-Rust `u64` addition call also passes. Local-store pointer
+cases cover `u32`, narrow scalar, and
 `u64` loads and stores, including packed halfwords and doublewords that cross
 16-byte boundaries. A separate optimized loop has loop-carried values and a
 call in its body. This
@@ -86,8 +90,11 @@ emitted branch forms and jump-table relocation are present. The emulator
 checks all seven arms plus five fallback inputs. This test exposed and fixed a
 CellSPU branch-folding bug where an explicit false destination was lost when
 LLVM rewrote the control-flow graph.
-These two fixtures cover specific optimized integer-match shapes; general
-switch lowering, enums, and arbitrary control flow remain unvalidated.
+An optimized `u64` match checks five arms and six fallback inputs, including
+zero and both sides of the low-word sign boundary. It exposed and now guards
+against a signed 64-bit ordering bug. These fixtures cover specific optimized
+integer-match shapes; general switch lowering, enums, and arbitrary control
+flow remain unvalidated.
 It also exercises runtime-indexed raw-pointer `u32` loads and stores on one
 32-byte array, checking that writes preserve neighboring words. Those
 functions are `unsafe`; this is not a general pointer-safety or bounds check.

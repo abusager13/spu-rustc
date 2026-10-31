@@ -192,14 +192,16 @@ def CGTr64sgt:
     CodeFrag<(CGTv4i32 (COPY_TO_REGCLASS R64C:$rA, VECREG),
                        (COPY_TO_REGCLASS R64C:$rB, VECREG))>;
 
-def CGTr64eq:
-    CodeFrag<(CEQv4i32 (COPY_TO_REGCLASS R64C:$rA, VECREG),
-                       (COPY_TO_REGCLASS R64C:$rB, VECREG))>;
+// The high word is signed, but when it is equal the low word must be
+// ordered as unsigned. XSWD broadcasts that low-word comparison.
+class SignedGreater64<dag lhs, dag rhs>:
+    CodeFrag<(SELBv2i64 (CGTv4i32 lhs, rhs),
+                        (XSWDv2i64 (CLGTv4i32 lhs, rhs)),
+                        (CEQv4i32 lhs, rhs))>;
 
 def CGTr64compare:
-    CodeFrag<(SELBv2i64 CGTr64sgt.Fragment,
-                        (XSWDv2i64 CGTr64sgt.Fragment),
-                        CGTr64eq.Fragment)>;
+    SignedGreater64<(COPY_TO_REGCLASS R64C:$rA, VECREG),
+                    (COPY_TO_REGCLASS R64C:$rB, VECREG)>;
 
 def CGTv2i64sgt:
     CodeFrag<(CGTv4i32 VECREG:$rA, VECREG:$rB)>;
@@ -238,9 +240,14 @@ def : I64SELECTNegCond<setle, I64GTr64>;
 // i64 setge/setlt:
 //-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~-~
 
+// a >= b is the inverse of b > a, using the same signed-high,
+// unsigned-low comparison as CGTr64compare.
+def CGTr64reverse:
+    SignedGreater64<(COPY_TO_REGCLASS R64C:$rB, VECREG),
+                    (COPY_TO_REGCLASS R64C:$rA, VECREG)>;
+
 def CGEr64compare:
-    CodeFrag<(CGTIv4i32 (GBv4i32 (ORv4i32 CGTr64sgt.Fragment,
-                                          CGTr64eq.Fragment)), 0xb)>;
+    CodeFrag<(XORIr32 (COPY_TO_REGCLASS CGTr64reverse.Fragment, R32C), -1)>;
 
 def CGEv2i64compare:
     CodeFrag<(CEQIv4i32 (GBv4i32 (ORv4i32 CGTv2i64sgt.Fragment,

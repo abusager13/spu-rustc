@@ -2700,6 +2700,10 @@ static SDValue LowerSELECT_CC(SDValue Op, SelectionDAG &DAG,
                                     DAG.getDataLayout(), *DAG.getContext(),
                                     Op.getValueType()),
                                 lhs, rhs, condition);
+  // SETCC produces a scalar zero-or-minus-one mask. An i64 select needs that
+  // mask in both words; the unused lanes of the comparison are not reliable.
+  if (VT == MVT::i64 && compare.getValueType() == MVT::i32)
+    compare = DAG.getNode(ISD::SIGN_EXTEND, dl, VT, compare);
   return DAG.getNode(SPUISD::SELB, dl, VT, falseval, trueval, compare);
 }
 

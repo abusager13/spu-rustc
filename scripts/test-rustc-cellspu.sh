@@ -410,6 +410,65 @@ echo "rustc 1.99 CellSPU no_core sparse match: GNU-matched compare and table enc
 "$rustc" -Z unstable-options \
     --target="$target_short_calls" \
     --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
+    -Cllvm-args=-verify-machineinstrs \
+    -o "$tmp/u64_match.o" "$root/experiments/rustc-cellspu/u64_match.rs"
+
+u64_match_disassembly=$("$spu_objdump" -dr "$tmp/u64_match.o")
+for instruction in cgt clgt ceq xswd selb gb cgti; do
+    grep -Eq "${instruction}[[:space:]]+\\$" <<<"$u64_match_disassembly" || {
+        echo "Rust u64 match object did not contain native SPU $instruction" >&2
+        exit 1
+    }
+done
+
+"$spu_objdump" -d "$tmp/u64_match.o" | \
+    awk '$6 ~ /^(cgt|clgt|ceq|xswd|selb|gb|cgti)$/ { printf "%s", $6; for (i = 7; i <= NF && $i !~ /^#/; i++) printf " %s", $i; print "" }' \
+    >"$tmp/u64_match-encoding.s"
+"$spu_as" -o "$tmp/u64_match-reference.o" "$tmp/u64_match-encoding.s"
+reference=$("$spu_objdump" -d "$tmp/u64_match-reference.o" | \
+    awk '$6 ~ /^(cgt|clgt|ceq|xswd|selb|gb|cgti)$/ { print $2 $3 $4 $5 }')
+actual_encoding=$("$spu_objdump" -d "$tmp/u64_match.o" | \
+    awk '$6 ~ /^(cgt|clgt|ceq|xswd|selb|gb|cgti)$/ { print $2 $3 $4 $5 }')
+if [[ "$reference" != "$actual_encoding" ]]; then
+    echo "LLVM u64 match instruction encodings differ from GNU SPU binutils" >&2
+    exit 1
+fi
+
+"$spu_as" -o "$tmp/u64_match_start.o" \
+    "$root/experiments/rustc-cellspu/u64_match_start.s"
+"$spu_ld" -Ttext=0 -e _start -o "$tmp/u64_match.elf" \
+    "$tmp/u64_match_start.o" "$tmp/u64_match.o"
+
+if ! (cd "$tmp" && ANERG_MBOX="$tmp/u64_match_mailbox" \
+    timeout "${SPU_EMULATOR_TIMEOUT:-10s}" "$emulator" "$tmp/u64_match.elf") \
+    >"$tmp/u64_match_emulator.log" 2>&1; then
+    cat "$tmp/u64_match_emulator.log" >&2
+    echo "Rust CellSPU u64 match emulator run failed or timed out" >&2
+    exit 1
+fi
+grep -Fq '####### stop instruction reached:' "$tmp/u64_match_emulator.log" || {
+    cat "$tmp/u64_match_emulator.log" >&2
+    echo "Rust CellSPU u64 match image did not reach stop" >&2
+    exit 1
+}
+mailbox_size=$(wc -c <"$tmp/u64_match_mailbox")
+[[ "$mailbox_size" -eq 44 ]] || {
+    echo "Expected eleven u64 match result words, got $mailbox_size bytes" >&2
+    exit 1
+}
+actual=$(od -An -N44 -tx1 "$tmp/u64_match_mailbox" | tr -d '[:space:]')
+expected=1111000022220000333300004444000055550000
+expected+=aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000aaaa0000
+[[ "$actual" == "$expected" ]] || {
+    echo "Unexpected Rust CellSPU u64 match results: ${actual:-<empty>}" >&2
+    exit 1
+}
+
+echo "rustc 1.99 CellSPU no_core optimized u64 match: GNU-matched compare encodings; emulator checked five arms and six fallback inputs"
+
+"$rustc" -Z unstable-options \
+    --target="$target_short_calls" \
+    --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
     -Coverflow-checks=off \
     -o "$tmp/indexed_memory.o" "$root/experiments/rustc-cellspu/indexed_memory.rs"
 

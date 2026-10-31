@@ -41,9 +41,15 @@ memory operations:
    the SPU C ABI; GNU `spu-ld` links the objects into an executable. GNU
    `spu-as` assembles the small entry wrapper.
 3. The pinned `anergistic`
-   emulator checks all 116 result words and reaches `stop`. In addition
+   emulator checks all 118 result words and reaches `stop`. In addition
    to signed and unsigned `i32` and `i16` branch cases, one mailbox word packs
    twenty `i64` equality, inequality, signed, and unsigned comparison results.
+   A GCC caller also checks all ten predicates over 185 deterministic operand
+   pairs, including equal high words with low words across the sign boundary.
+   Optimized Rust `select` cases also check signed `i64`, unsigned `u64`,
+   equality, and signed `i32` conditions selecting 64-bit constants. The
+   lowering sign-extends scalar comparison masks when the selected value is
+   `i64`; emulator checks compare the complete selected values.
    Signed and unsigned `i64` cases include opposite high/low-word ordering to
    exercise full-width comparison. The
    immediate shifts return `0x91a0`, `0x04000000`, and `0xffffffff`; the
@@ -160,8 +166,14 @@ current layout successor. A later CFG rewrite could then lose that edge. The
 backend now preserves explicit false targets until the final SPU branch
 cleanup; the machine verifier passes, emitted compare and table encodings
 match GNU binutils, and the emulator checks all seven arms plus five fallback
-inputs. These fixtures cover two optimized integer-match shapes, not general
-switch, enum, or arbitrary control-flow lowering.
+inputs. A direct-rustc optimized `u64` match checks five arms and six fallback
+inputs. Its zero case exposed a signed `i64` ordering error when equal high
+words had low words on opposite sides of `0x80000000`; the backend now uses an
+unsigned low-word comparison. The LLVM smoke fixture also checks the full
+64-bit result of signed and unsigned `i64` selects, an equality select, and an
+`i32` condition selecting a `u64`; scalar predicate masks are extended across
+both result words. These fixtures cover specific optimized integer-match and
+selection shapes, not general switch, enum, or arbitrary control-flow lowering.
 
 A separate unsafe raw-pointer fixture computes `base + index * 4` and performs
 dynamic `u32` loads and stores. It exercises `cwx`, `lqx`, `rotqby`, `shufb`,
