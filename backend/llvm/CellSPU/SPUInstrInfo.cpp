@@ -395,11 +395,12 @@ SPUInstrInfo::insertBranch(MachineBasicBlock &MBB, MachineBasicBlock *TBB,
   if (haveHBR)
     MIB = BuildMI(&MBB, DL, get(SPU::HBR_LABEL)).addSym(branchLabel);
 
-  // One-way branch or a conditional branch whose false edge is the layout
-  // successor. In the latter case SPU control naturally falls through; an
-  // explicit second branch would add another odd-pipe terminator and force
-  // the nop filler to place an illegal instruction between terminators.
-  if (FBB == 0 || (!Cond.empty() && MBB.isLayoutSuccessor(FBB))) {
+  // One-way branch. Preserve an explicit false destination even when it is
+  // currently the layout successor: LLVM's late branch folder can remove or
+  // move that block, so retaining the branch operand lets it update the CFG
+  // without losing the false edge. The final SPU nop filler removes the
+  // redundant second branch if the false destination still falls through.
+  if (FBB == 0) {
     if (Cond.empty()) {
       // Unconditional branch
       MIB = BuildMI(&MBB, DL, get(SPU::BR));

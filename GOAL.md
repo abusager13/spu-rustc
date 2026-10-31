@@ -150,3 +150,12 @@ unsigned 64-bit input patterns are also covered. This remains a narrow
 experiment using Rust ABI and an experimental target JSON. It does not build
 `core`, support ordinary
 `#![no_std]`, or provide an in-tree rustc target.
+
+The direct-rustc suite also compiles a sparse `u32` match that mixes
+comparisons with a compact lookup table. It exposed a CellSPU branch-folding
+bug where dropping an explicit false destination could lose an edge after an
+LLVM control-flow rewrite. The backend now retains explicit false targets
+through that rewrite; machine verification passes, compare and table
+instruction encodings match GNU SPU binutils, and the emulator checks all
+seven arms plus five fallback inputs. This remains one tested control-flow
+shape; general switch and enum lowering remain unvalidated.

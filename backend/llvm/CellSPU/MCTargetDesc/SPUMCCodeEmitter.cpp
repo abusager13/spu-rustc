@@ -121,6 +121,8 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return 0x04000000 | (reg(MI, 1) << 7) | reg(MI, 0);
     if (Name.starts_with("CEQH"))
       return RR(0x79000000);
+    if (Name.starts_with("CEQI"))
+      return RI10(0x7c000000, 2, 1, 0, 10, 0);
     if (Name.starts_with("CEQ"))
       return RR(0x78000000);
     if (Name.starts_with("CGTH"))

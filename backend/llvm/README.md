@@ -116,6 +116,16 @@ The same direct-rustc script also compiles a separate dense ten-arm `u32`
 binutils, and the emulator checks every arm plus two fallback inputs. This
 validates one optimized lookup-table shape only.
 
+A sparse `u32` match fixture also exercises a mixed comparison-tree and
+compact lookup-table lowering. It exposed a branch-folding bug in which
+`insertBranch` discarded an explicit false destination when that block was the
+current layout successor. A later CFG rewrite could then lose that edge. The
+backend now preserves explicit false targets until the final SPU branch
+cleanup; the machine verifier passes, emitted compare and table encodings
+match GNU binutils, and the emulator checks all seven arms plus five fallback
+inputs. These fixtures cover two optimized integer-match shapes, not general
+switch, enum, or arbitrary control-flow lowering.
+
 A separate unsafe raw-pointer fixture computes `base + index * 4` and performs
 dynamic `u32` loads and stores. It exercises `cwx`, `lqx`, `rotqby`, `shufb`,
 and `stqx`; GNU SPU encodings match byte for byte, and the emulator checks all
@@ -155,12 +165,12 @@ cmake --build /path/to/llvm-build --target llc -j6
 The larger smoke check starts with Rust source, but invokes host `rustc` first
 and then retargets its LLVM IR with a separate `llc` command. The direct-rustc
 probe covers only the listed `u32` and `u64` arithmetic and shift operations
-in `#![no_core]` fixtures with hand-written minimal lang items. Multiplication
-is checked for four operand pairs; this is not exhaustive arithmetic
-validation. Together, these paths do not demonstrate ordinary
-`#![no_std]` code through rustc for SPU or a supported `rustc --target=spu`
-workflow. This repository still has no
-maintained Rust target specification integrated into the rustc source tree. A Cargo
+and two specific integer `match` shapes in `#![no_core]` fixtures with
+hand-written minimal lang items. Multiplication is checked for four operand
+pairs; this is not exhaustive arithmetic validation. Together, these paths do
+not demonstrate ordinary `#![no_std]` code through rustc for SPU or a supported
+`rustc --target=spu` workflow. This repository still has no maintained Rust
+target specification integrated into the rustc source tree. A Cargo
 `build-std` probe reaches `core`, then rustc panics while computing the C ABI
 for `core::ffi::VaList` because `arch = "spu"` has no foreign-ABI lowering.
 This project does not yet provide the rustc-side ABI support needed to build
@@ -185,7 +195,8 @@ covers selected accesses in a 32-byte fixture, including packed halfword and
 doubleword cases crossing a 16-byte boundary; this does not validate arbitrary
 cross-block accesses, pointer arithmetic, or general memory semantics. Loops
 with other control-flow shapes,
-general merge/phi cases, and the rest of the ABI remain unvalidated here.
+general merge/phi cases, and the rest of the ABI remain unvalidated here. The
+direct-rustc match fixtures do not validate general switch or enum lowering.
 
 LLVM now has an experimental MC code emitter, assembler backend, and ELF object
 writer for the instruction and relocation forms exercised by the smoke check.

@@ -22,6 +22,15 @@ instructions match GNU SPU binutils. Its emulator image checks all ten arms
 plus the fallback for 10 and `u32::MAX`, for twelve results. This covers one
 optimized integer-match shape, not general switch or enum lowering.
 
+A sparse `u32` match fixture covers a comparison tree combined with a compact
+lookup table. It found a backend bug where LLVM's late branch folder could
+lose the false edge after the target omitted an explicit branch to the
+current layout successor. The target now preserves that destination through
+CFG rewriting. Machine verification passes, generated compare and table
+instruction encodings match GNU SPU binutils, and the emulator checks all
+seven arms and five fallback inputs. This does not establish general switch,
+enum, or control-flow support.
+
 A raw-pointer fixture builds a local-store word address from a base pointer and
 runtime index, then loads or stores through it. The generated `cwx`, `lqx`,
 `rotqby`, `shufb`, and `stqx` encodings match GNU SPU binutils. The emulator

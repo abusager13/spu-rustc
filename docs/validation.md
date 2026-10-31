@@ -629,7 +629,7 @@ local-store ELF layout. It does not validate the complete ISA, DMA, concurrent
 SPU behavior, runtime execution of the PPU loader, PS3 firmware integration, or
 physical hardware.
 
-## Latest verification (2026-10-30)
+## Latest verification (2026-10-31)
 
 - Installed the pinned `ps3dev/ps3toolchain` `nightly-2026-10-11` under
   `/home/longlive/opt/ps3dev/spu` using `scripts/install-spu-toolchain.sh`.
@@ -800,3 +800,18 @@ physical hardware.
   passed its 116 results and large-memory pointer image. This exercises one
   aligned 32-byte buffer; bounds, arbitrary pointer arithmetic, and unaligned
   access remain unvalidated.
+- Added a direct-rustc sparse `u32` match fixture that combines a comparison
+  tree with a compact lookup table. It exposed a branch-folder miscompile:
+  `insertBranch` omitted an explicit false destination when it was the current
+  layout successor, and a later CFG rewrite could lose that edge. The backend
+  now retains explicit false destinations until final branch cleanup. LLVM's
+  machine verifier passes, generated compare and table encodings match GNU
+  SPU binutils, and the branch forms and jump-table relocation are present.
+  The emulator checked all seven arms and five
+  fallback inputs. The full direct-rustc suite passed, including arithmetic,
+  shifts, multiplication, dense match, sparse match, and indexed local-store
+  access. The LLVM CellSPU smoke suite passed all 116 results and its large-
+  memory static-pointer case. `SPU_REQUIRE_E2E=1 cargo test --offline` passed
+  all 76 unit tests and six end-to-end tests. Sparse match coverage remains
+  one specific control-flow shape; general switch and enum lowering, ordinary
+  `#![no_std]`, SPU `core`, and PPU loading remain future work.

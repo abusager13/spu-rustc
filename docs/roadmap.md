@@ -204,6 +204,16 @@ execution gate is passed.
    SPU binutils; the emulator checks all ten arms and two fallback values.
    This does not validate general switch or enum lowering.
 
+   A sparse `u32` match fixture now checks a comparison tree combined with a
+   compact lookup table. It exposed that the backend dropped an explicit false
+   destination when it was the current layout successor, allowing a later
+   branch-folder rewrite to lose the false CFG edge. `insertBranch` now keeps
+   the explicit destination until final branch cleanup. The LLVM machine
+   verifier passes, compare and table encodings match GNU SPU binutils, and
+   the emulator checks all seven arms plus five fallback inputs. These
+   fixtures validate only two integer-match shapes; general switch and enum
+   support remain open.
+
    A separate raw-pointer fixture forms a runtime-indexed word address and
    exercises `cwx`, `lqx`, `rotqby`, `shufb`, and `stqx`. GNU SPU encodings
    match, and the emulator checks eight word loads plus three stores with
