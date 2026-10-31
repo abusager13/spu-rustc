@@ -154,6 +154,18 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return RR(0x79800000);
     if (Name == "MPYHHUr32" || Name == "MPYHHUv4i32")
       return RR(0x79c00000);
+    if (Name == "FAf32")
+      return RR(0x58800000);
+    if (Name == "FSf32")
+      return RR(0x58a00000);
+    if (Name == "FMf32")
+      return RR(0x58c00000);
+    if (Name == "FAf64")
+      return RR(0x59800000);
+    if (Name == "FSf64")
+      return RR(0x59a00000);
+    if (Name == "FMf64")
+      return RR(0x59c00000);
     if (Name == "CGr32" || Name == "CGr64" || Name == "CGv2i64" ||
         Name == "CGv4i32")
       return RR(0x18400000);

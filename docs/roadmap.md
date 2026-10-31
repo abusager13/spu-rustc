@@ -204,6 +204,12 @@ execution gate is passed.
    helpers. The fixture uses unchecked Rust intrinsics with valid operands; it
    does not cover divide-by-zero or signed-overflow panic paths.
 
+   Scalar Rust `f32` addition, subtraction, and multiplication now select SPU
+   `fa`, `fs`, and `fm`, while `f64` uses `dfa`, `dfs`, and `dfm`. Direct LLVM
+   object bytes match GNU SPU assembler output. The pinned emulator reports
+   `fa` as unknown, so this remains code-generation validation only;
+   floating-point runtime behavior and the floating-point C ABI remain open.
+
    A direct-rustc integration proof now complements this harness: a custom
    stage1 rustc built against the CellSPU LLVM target compiles a minimal
    `#![no_core]` Rust fixture directly to ELF32 big-endian `EM_SPU` objects.

@@ -850,3 +850,13 @@ physical hardware.
   the large-memory pointer image. The full direct-rustc arithmetic, shift,
   multiply, match, and indexed-memory suite also passed after the backend
   rebuild.
+- Added an LLVM smoke fixture for scalar Rust `f32` and `f64` addition,
+  subtraction, and multiplication. The backend now emits `fa`, `fs`, `fm`,
+  `dfa`, `dfs`, and `dfm`; LLVM's direct object bytes match the GNU SPU
+  assembler for each instruction, and `-verify-machineinstrs` passes. A
+  runtime probe stopped at `fa`: the available emulator reports that
+  instruction as unknown. This therefore
+  validates code emission only; it does not verify IEEE corner cases, floating-
+  point argument/return ABI behavior, or runtime results. The full LLVM smoke
+  suite still passed its 116 emulator results, vector ABI cases, division
+  checks, and large-memory pointer image.

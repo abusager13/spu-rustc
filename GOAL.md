@@ -141,6 +141,10 @@ The same LLVM smoke suite now lowers signed and unsigned `i32` and `i64`
 division and remainder through SPU runtime helpers and checks the results in
 the emulator. The test uses nonzero divisors and excludes signed overflow; it
 does not validate the Rust panic paths for invalid division or provide `core`.
+It also emits scalar `f32` and `f64` addition, subtraction, and multiplication
+as SPU `fa`/`fs`/`fm` and `dfa`/`dfs`/`dfm`; GNU assembler matches those
+encodings. The emulator does not implement `fa`, so these are not runtime or
+full floating-point semantic checks.
 See
 [the LLVM backend port](backend/llvm/README.md),
 [the architecture investigation](docs/architecture.md), and

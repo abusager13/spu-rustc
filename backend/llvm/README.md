@@ -119,6 +119,13 @@ validate Rust's divide-by-zero or signed-overflow panic paths. GNU binutils
 also confirm the absolute `BRASL` encoding and relocation for an ordinary
 external declaration; that call is not executed in the emulator.
 
+The same smoke suite emits scalar Rust `f32` addition, subtraction, and
+multiplication as SPU `fa`, `fs`, and `fm`, plus `f64` operations as `dfa`,
+`dfs`, and `dfm`. Direct LLVM object bytes match the GNU SPU assembler output.
+The pinned emulator rejects `fa` as an unknown instruction, so this checks
+code emission only. Floating-point runtime behavior, corner cases such as
+NaNs and subnormals, and the floating-point C ABI remain unvalidated.
+
 In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
 from a minimal `#![no_core]` fixture with `u32` addition, `u64`

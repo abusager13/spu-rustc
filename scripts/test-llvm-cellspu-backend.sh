@@ -590,6 +590,42 @@ RUSTC_BOOTSTRAP=1 "$rustc" --crate-type=lib --emit=llvm-ir \
     -C panic=abort -C opt-level=1 \
     -o "$tmp/integer_division.ll" "$tmp/integer_division.rs"
 
+cat >"$tmp/float_math.rs" <<'RUST'
+#![no_std]
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f32_add(lhs: f32, rhs: f32) -> f32 {
+    lhs + rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f32_sub(lhs: f32, rhs: f32) -> f32 {
+    lhs - rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f32_mul(lhs: f32, rhs: f32) -> f32 {
+    lhs * rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f64_add(lhs: f64, rhs: f64) -> f64 {
+    lhs + rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f64_sub(lhs: f64, rhs: f64) -> f64 {
+    lhs - rhs
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_f64_mul(lhs: f64, rhs: f64) -> f64 {
+    lhs * rhs
+}
+RUST
+"$rustc" --crate-type=lib --emit=llvm-ir -C panic=abort -C opt-level=1 \
+    -o "$tmp/float_math.ll" "$tmp/float_math.rs"
+
 python3 - "$tmp/stack_args.rs" <<'PY'
 from pathlib import Path
 import sys
@@ -617,7 +653,8 @@ python3 - "$tmp/scalar.ll" "$tmp/scalar-spu.ll" \
     "$tmp/stack_args.ll" "$tmp/stack_args-spu.ll" \
     "$tmp/dynamic_shift.ll" "$tmp/dynamic_shift-spu.ll" \
     "$tmp/vector_abi.ll" "$tmp/vector_abi-spu.ll" \
-    "$tmp/integer_division.ll" "$tmp/integer_division-spu.ll" <<'PY'
+    "$tmp/integer_division.ll" "$tmp/integer_division-spu.ll" \
+    "$tmp/float_math.ll" "$tmp/float_math-spu.ll" <<'PY'
 import pathlib
 import re
 import sys
@@ -1424,6 +1461,9 @@ ASM
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 \
     -mattr=+short-calls -O1 -verify-machineinstrs -filetype=obj \
     "$tmp/integer_division-spu.ll" -o "$tmp/integer_division_short.o"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
+    -verify-machineinstrs -filetype=obj "$tmp/float_math-spu.ll" \
+    -o "$tmp/float_math.o"
 
 # Build the same instruction streams through LLVM's text printer and GNU's
 # assembler. Compare disassembly to cross-check the direct MC encodings while
@@ -1448,6 +1488,10 @@ ASM
     -o "$tmp/dynamic_shift_large.s"
 "$spu_as" -o "$tmp/dynamic_shift_large-asm.o" \
     "$tmp/dynamic_shift_large.s"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
+    -verify-machineinstrs -filetype=asm "$tmp/float_math-spu.ll" \
+    -o "$tmp/float_math.s"
+"$spu_as" -o "$tmp/float_math-asm.o" "$tmp/float_math.s"
 
 compare_direct_and_gnu_encoding() {
     local name=$1
@@ -1470,6 +1514,17 @@ compare_direct_and_gnu_encoding optimized_loop
 compare_direct_and_gnu_encoding stack_args
 compare_direct_and_gnu_encoding dynamic_shift
 compare_direct_and_gnu_encoding dynamic_shift_large
+compare_direct_and_gnu_encoding float_math
+
+float_math_disassembly=$("$spu_objdump" -d "$tmp/float_math.o")
+for instruction in fa fs fm dfa dfs dfm; do
+    if ! grep -Eq "[[:space:]]${instruction}[[:space:]]" \
+            <<<"$float_math_disassembly"; then
+        printf '%s\n' "$float_math_disassembly" >&2
+        echo "Rust floating-point operation did not select SPU ${instruction}" >&2
+        exit 1
+    fi
+done
 
 vector_disassembly=$("$spu_objdump" -dr "$tmp/vector_abi.o")
 grep -Eq 'a[[:space:]]+\$3,\$4,\$3' <<<"$vector_disassembly" || {
@@ -1858,4 +1913,4 @@ if [[ "$byte_count" != 464 || "$actual" != "$expected" ]]; then
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic and integer division, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 116 main results, checked GCC-to-Rust vector ABI and signed/unsigned division through 64 bits, and validated a static pointer above 64 KiB in large-memory mode\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic and integer division, f32/f64 float codegen, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 116 main results and checked vector ABI and division through 64 bits; GNU SPU assembler matched float encodings, which the emulator cannot execute\n'

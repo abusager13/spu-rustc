@@ -53,6 +53,13 @@ cases, including negative signed operands. The fixture uses Rust's unchecked
 division intrinsics to isolate backend codegen; divide-by-zero and signed
 overflow panic behavior are not validated, and this does not build `core`.
 
+The LLVM smoke suite also emits scalar Rust `f32` addition, subtraction, and
+multiplication as SPU `fa`, `fs`, and `fm`, plus `f64` operations as `dfa`,
+`dfs`, and `dfm`. Direct LLVM object encodings match GNU SPU assembly. The
+available emulator rejects `fa` as an unknown instruction, so these operations
+are code-generation checked but not runtime checked; IEEE floating-point edge
+cases and the floating-point C ABI remain unvalidated.
+
 A separate direct-rustc proof builds a custom stage1 compiler against this LLVM
 target and compiles a minimal `#![no_core]` fixture straight to big-endian
 `EM_SPU` objects. It exercises `u32` addition, `u64` addition/subtraction,
