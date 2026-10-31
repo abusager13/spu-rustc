@@ -43,8 +43,23 @@ for expected in 'target_arch="spu"' 'target_endian="big"' 'target_pointer_width=
     }
 done
 
+# The emulator does not implement absolute BRASL. Make a temporary target
+# variant for this suite so it uses range-limited relative calls without
+# changing the repository's default target configuration.
+target_short_calls="$tmp/target-short-calls.json"
+python3 - "$root/experiments/rustc-cellspu/target.json" \
+    "$target_short_calls" <<'PY'
+import json
+import pathlib
+import sys
+
+target = json.loads(pathlib.Path(sys.argv[1]).read_text())
+target["features"] = "+short-calls"
+pathlib.Path(sys.argv[2]).write_text(json.dumps(target))
+PY
+
 "$rustc" -Z unstable-options \
-    --target="$root/experiments/rustc-cellspu/target.json" \
+    --target="$target_short_calls" \
     --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
     -Cllvm-args=-verify-machineinstrs \
     -o "$tmp/add_u32.o" "$root/experiments/rustc-cellspu/add_u32.rs"
@@ -102,7 +117,7 @@ actual=$(od -An -N4 -tx1 "$tmp/mailbox" | tr -d '[:space:]')
 echo "rustc 1.99 CellSPU no_core u32 addition: ELF32 big-endian EM_SPU; native a instruction; emulator returned 42 and reached stop"
 
 "$rustc" -Z unstable-options \
-    --target="$root/experiments/rustc-cellspu/target.json" \
+    --target="$target_short_calls" \
     --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
     -o "$tmp/u64_arithmetic.o" "$root/experiments/rustc-cellspu/u64_arithmetic.rs"
 
@@ -194,7 +209,7 @@ actual=$(od -An -N352 -tx1 "$tmp/u64_mailbox" | tr -d '[:space:]')
 echo "rustc 1.99 CellSPU no_core integer arithmetic and shifts: GNU-matched native encodings; emulator checked 88 add, subtract, bitwise, logical, and arithmetic shift results and reached stop"
 
 "$rustc" -Z unstable-options \
-    --target="$root/experiments/rustc-cellspu/target.json" \
+    --target="$target_short_calls" \
     --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
     -Coverflow-checks=off \
     -o "$tmp/u64_multiply.o" "$root/experiments/rustc-cellspu/u64_multiply.rs"
@@ -264,7 +279,7 @@ actual=$(od -An -N32 -tx1 "$tmp/u64_multiply_mailbox" | tr -d '[:space:]')
 echo "rustc 1.99 CellSPU no_core u64 wrapping multiplication: GNU-matched multiply encodings; emulator checked four products and reached stop"
 
 "$rustc" -Z unstable-options \
-    --target="$root/experiments/rustc-cellspu/target.json" \
+    --target="$target_short_calls" \
     --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
     -o "$tmp/dense_match.o" "$root/experiments/rustc-cellspu/dense_match.rs"
 
@@ -328,7 +343,7 @@ actual=$(od -An -N48 -tx1 "$tmp/dense_match_mailbox" | tr -d '[:space:]')
 echo "rustc 1.99 CellSPU no_core dense match: GNU-matched clgti/lqx/rotqby encodings; emulator checked ten table arms and two fallback inputs and reached stop"
 
 "$rustc" -Z unstable-options \
-    --target="$root/experiments/rustc-cellspu/target.json" \
+    --target="$target_short_calls" \
     --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
     -Cllvm-args=-verify-machineinstrs \
     -o "$tmp/sparse_match.o" "$root/experiments/rustc-cellspu/sparse_match.rs"
@@ -393,7 +408,7 @@ actual=$(od -An -N48 -tx1 "$tmp/sparse_match_mailbox" | tr -d '[:space:]')
 echo "rustc 1.99 CellSPU no_core sparse match: GNU-matched compare and table encodings; emulator checked seven arms plus table and range fallbacks and reached stop"
 
 "$rustc" -Z unstable-options \
-    --target="$root/experiments/rustc-cellspu/target.json" \
+    --target="$target_short_calls" \
     --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
     -Coverflow-checks=off \
     -o "$tmp/indexed_memory.o" "$root/experiments/rustc-cellspu/indexed_memory.rs"

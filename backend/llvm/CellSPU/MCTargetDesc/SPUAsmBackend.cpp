@@ -106,6 +106,9 @@ public:
     if ((Value & 3) != 0)
       getContext().reportError(Fixup.getLoc(),
                                "CellSPU branch/address fixup is not word aligned");
+    if (Fixup.getKind() == SPU::fixup_spu_addr16 && Value > 0x3ffff)
+      getContext().reportError(Fixup.getLoc(),
+                               "CellSPU absolute target is outside local store");
     if (Fixup.getKind() == SPU::fixup_spu_rel16) {
       int64_t SignedValue = static_cast<int64_t>(Value);
       if (SignedValue > (INT16_MAX * 4LL) ||

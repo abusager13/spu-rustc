@@ -137,6 +137,10 @@ emission remain future work. A separate vector ABI image checks a Rust-generated
 stack and returned by Rust; the emulator verifies every result lane. It uses
 the host-rustc retargeting route and an internal SIMD representation feature;
 these are narrow ABI cases, not a supported vector API.
+The same LLVM smoke suite now lowers signed and unsigned `i32` and `i64`
+division and remainder through SPU runtime helpers and checks the results in
+the emulator. The test uses nonzero divisors and excludes signed overflow; it
+does not validate the Rust panic paths for invalid division or provide `core`.
 See
 [the LLVM backend port](backend/llvm/README.md),
 [the architecture investigation](docs/architecture.md), and

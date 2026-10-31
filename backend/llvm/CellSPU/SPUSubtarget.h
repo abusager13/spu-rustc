@@ -54,6 +54,9 @@ namespace llvm {
     /// instructions that assume 259K local store.
     bool UseLargeMem;
 
+    /// Use short PC-relative direct calls when explicitly asked.
+    bool UseShortCalls;
+
     SPURegisterInfo RegisterInfo;
     SPUInstrInfo InstrInfo;
     SPUFrameLowering FrameLowering;
@@ -75,6 +78,8 @@ namespace llvm {
     /// SetJITMode - This is called to inform the subtarget info that we are
     /// producing code for the JIT.
     void SetJITMode();
+
+    void initLibcallLoweringInfo(LibcallLoweringInfo &Info) const override;
 
     /// getStackAlignment - Returns the minimum alignment known to hold of the
     /// stack frame on entry to the function and which must be maintained by
@@ -104,6 +109,10 @@ namespace llvm {
     /// Use large memory addressing predicate
     bool usingLargeMem() const {
       return UseLargeMem;
+    }
+
+    bool usingShortCalls() const {
+      return UseShortCalls;
     }
 
     /// getDataLayoutString - Return the pointer size and type alignment

@@ -3420,8 +3420,8 @@ let isCall = 1,
           R70,R71,R72,R73,R74,R75,R76,R77,R78,R79],
   // All of these instructions use $lr (aka $0)
   Uses = [R0]  in {
-  // Branch relative and set link: Used if we actually know that the target
-  // is within [-32768, 32767] bytes of the target
+  // Branch relative and set link: the signed displacement is in 4-byte words
+  // and ranges from -32768 through 32767 words.
   def BRSL:
     BranchSetLink<0b011001100, (outs), (ins relcalltarget:$func),
       "brsl\t$$lr, $func",

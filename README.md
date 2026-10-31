@@ -45,6 +45,14 @@ lanes. This probe uses host Rust IR retargeted to CellSPU and Rust's internal
 `repr(simd)` feature under `RUSTC_BOOTSTRAP=1`. It checks these `v4i32` paths,
 not a supported Rust SIMD API or the full vector ABI.
 
+The LLVM smoke suite also covers signed and unsigned integer division and
+remainder for `i32` and `i64`. Rust-generated calls use the SPU runtime-helper
+ABI; GCC supplies the 32-bit helpers in this test, and the installed SPU
+`libgcc` supplies the 64-bit helpers. The emulator checks valid nonzero-divisor
+cases, including negative signed operands. The fixture uses Rust's unchecked
+division intrinsics to isolate backend codegen; divide-by-zero and signed
+overflow panic behavior are not validated, and this does not build `core`.
+
 A separate direct-rustc proof builds a custom stage1 compiler against this LLVM
 target and compiles a minimal `#![no_core]` fixture straight to big-endian
 `EM_SPU` objects. It exercises `u32` addition, `u64` addition/subtraction,

@@ -1421,19 +1421,11 @@ SPUTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
     SDValue GA = DAG.getTargetGlobalAddress(GV, dl, CalleeVT);
 
     if (!ST->usingLargeMem()) {
-      // Turn calls to targets that are defined (i.e., have bodies) into BRSL
-      // style calls, otherwise, external symbols are BRASL calls. This assumes
-      // that declared/defined symbols are in the same compilation unit and can
-      // be reached through PC-relative jumps.
-      //
-      // NOTE:
-      // This may be an unsafe assumption for JIT and really large compilation
-      // units.
-      if (GV->isDeclaration()) {
-        Callee = DAG.getNode(SPUISD::AFormAddr, dl, CalleeVT, GA, Zero);
-      } else {
-        Callee = DAG.getNode(SPUISD::PCRelAddr, dl, CalleeVT, GA, Zero);
-      }
+      // Absolute calls can reach any address in local store. Relative calls
+      // are an explicit size option; SPU ld does not diagnose REL16 overflow.
+      Callee = DAG.getNode(ST->usingShortCalls() ? SPUISD::PCRelAddr
+                                                 : SPUISD::AFormAddr,
+                           dl, CalleeVT, GA, Zero);
     } else {
       // "Large memory" mode: Turn all calls into indirect calls with a X-form
       // address pairs:
@@ -1446,7 +1438,12 @@ SPUTargetLowering::LowerCall(TargetLowering::CallLoweringInfo &CLI,
         Callee.getValueType());
 
     if (!ST->usingLargeMem()) {
-      Callee = DAG.getNode(SPUISD::AFormAddr, dl, CalleeVT, ExtSym, Zero);
+      // Use absolute calls by default so helpers can live anywhere in local
+      // store. Relative calls are an explicit size option; SPU ld does not
+      // diagnose an overflowing R_SPU_REL16 relocation.
+      Callee = DAG.getNode(ST->usingShortCalls() ? SPUISD::PCRelAddr
+                                                 : SPUISD::AFormAddr,
+                           dl, CalleeVT, ExtSym, Zero);
     } else {
       Callee = DAG.getNode(SPUISD::IndirectAddr, dl, PtrVT, ExtSym, Zero);
     }

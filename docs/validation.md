@@ -825,3 +825,28 @@ physical hardware.
   `RUSTC_BOOTSTRAP=1`; it does not provide a supported Rust SIMD API or broad
   vector-ABI coverage. The LLVM smoke suite passed all 116 main mailbox values
   plus these two separate vector ABI cases.
+- Added signed and unsigned `i32` and `i64` division and remainder to the LLVM
+  CellSPU smoke suite. The backend now selects the SPU runtime helpers
+  `__divsi3`, `__udivsi3`, `__modsi3`, `__umodsi3`, and the corresponding
+  `di3` symbols. Small-memory direct calls, including helpers, use absolute
+  `BRASL`/`R_SPU_ADDR16` by default; the `+short-calls` test mode uses
+  `BRSL`/`R_SPU_REL16` so the available emulator can execute those calls. A
+  GNU `spu-ld` probe showed that it accepts and truncates an out-of-range
+  `R_SPU_REL16` relocation, so short calls require a caller-guaranteed range
+  and the backend does not emit veneers. The
+  C ABI bridge supplies the 32-bit helper implementations using SPU GCC; the
+  installed SPU `libgcc` supplies the 64-bit helpers. The emulator checks
+  boundary, high-bit, unsigned, negative signed, quotient, and remainder
+  results from the short-call image, while default absolute-call objects for
+  both an intra-module function call and the helpers are checked for their
+  relocations and linked without emulator execution. `+large_mem` retains its
+  indirect call sequence.
+  These Rust fixtures use unchecked division intrinsics, nonzero divisors, and
+  no signed `MIN / -1`, so they test backend codegen and helper ABI without
+  claiming panic-path coverage. The same test emits an ordinary external
+  declaration call as `BRASL`/`R_SPU_ADDR16` and matches GNU binutils; the
+  available emulator cannot execute `BRASL`. The LLVM smoke suite passed
+  all 116 main mailbox values, both vector ABI cases, the division image, and
+  the large-memory pointer image. The full direct-rustc arithmetic, shift,
+  multiply, match, and indexed-memory suite also passed after the backend
+  rebuild.

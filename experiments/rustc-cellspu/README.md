@@ -62,6 +62,14 @@ The custom CellSPU LLVM build exports those initializer aliases, while
 `cellspu`. These aliases only initialize CellSPU; they do not enable or emit
 PowerPC code.
 
+The emulator regression script creates a temporary target specification with
+`features: "+short-calls"` because the available emulator does not implement
+the SPU's absolute `BRASL` instruction. `BRSL` has a signed 16-bit word
+displacement. The GNU SPU linker does not diagnose an out-of-range
+`R_SPU_REL16` relocation, so this mode is appropriate only for the small test
+images whose call targets are known to be nearby. The backend's default uses
+absolute calls in normal local-store mode.
+
 With the custom stage1 rustc, LLVM shared library, PS3 SPU binutils, and
 `anergistic` emulator available, run:
 

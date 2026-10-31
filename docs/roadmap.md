@@ -192,6 +192,18 @@ execution gate is passed.
    fixture. These are narrow `v4i32` ABI cases, not a supported Rust SIMD API
    or broad vector-ABI validation.
 
+   Signed and unsigned `i32` and `i64` division and remainder now lower to the
+   target's SPU runtime-helper ABI. Small-memory direct calls use absolute
+   `BRASL`/`R_SPU_ADDR16` by default; optional `+short-calls` emits
+   `BRSL`/`R_SPU_REL16` for the emulator, which does not implement `BRASL`.
+   The GNU linker accepts overflowing `R_SPU_REL16` relocations without an
+   error, so short calls require a caller-guaranteed range and the backend does
+   not synthesize veneers. `+large_mem` continues to use indirect calls. The
+   emulator checks results from GCC-to-Rust calls
+   using GCC-generated 32-bit helpers and the installed SPU `libgcc`'s 64-bit
+   helpers. The fixture uses unchecked Rust intrinsics with valid operands; it
+   does not cover divide-by-zero or signed-overflow panic paths.
+
    A direct-rustc integration proof now complements this harness: a custom
    stage1 rustc built against the CellSPU LLVM target compiles a minimal
    `#![no_core]` Rust fixture directly to ELF32 big-endian `EM_SPU` objects.

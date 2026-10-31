@@ -228,6 +228,11 @@ class SPUMCCodeEmitter final : public MCCodeEmitter {
       return Branch16(0x32000000, expressionOperand(MI), 0, false);
     if (Name == "BRSL")
       return Branch16(0x33000000, expressionOperand(MI), 0, false);
+    if (Name == "BRASL")
+      return 0x31000000 |
+             (immediateOrFixup(MI, expressionOperand(MI), 16,
+                               SPU::fixup_spu_addr16, false, Fixups)
+              << 7);
     if (Name.starts_with("BRHNZ"))
       return Branch16(0x23000000, expressionOperand(MI), 0, true);
     if (Name.starts_with("BRHZ"))

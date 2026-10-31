@@ -532,6 +532,64 @@ RUSTC_BOOTSTRAP=1 "$rustc" --crate-type=lib --emit=llvm-ir \
     -C panic=abort -C opt-level=1 \
     -o "$tmp/vector_abi.ll" "$tmp/vector_abi.rs"
 
+cat >"$tmp/integer_division.rs" <<'RUST'
+#![no_std]
+#![feature(core_intrinsics)]
+#![allow(internal_features)]
+
+unsafe extern "C" {
+    fn cellspu_external_target(value: u32) -> u32;
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cellspu_external_call(value: u32) -> u32 {
+    unsafe { cellspu_external_target(value) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cellspu_udiv32(lhs: u32, rhs: u32) -> u32 {
+    unsafe { core::intrinsics::unchecked_div(lhs, rhs) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cellspu_urem32(lhs: u32, rhs: u32) -> u32 {
+    unsafe { core::intrinsics::unchecked_rem(lhs, rhs) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cellspu_sdiv32(lhs: i32, rhs: i32) -> i32 {
+    unsafe { core::intrinsics::unchecked_div(lhs, rhs) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cellspu_srem32(lhs: i32, rhs: i32) -> i32 {
+    unsafe { core::intrinsics::unchecked_rem(lhs, rhs) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cellspu_udiv64(lhs: u64, rhs: u64) -> u64 {
+    unsafe { core::intrinsics::unchecked_div(lhs, rhs) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cellspu_urem64(lhs: u64, rhs: u64) -> u64 {
+    unsafe { core::intrinsics::unchecked_rem(lhs, rhs) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cellspu_sdiv64(lhs: i64, rhs: i64) -> i64 {
+    unsafe { core::intrinsics::unchecked_div(lhs, rhs) }
+}
+
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn cellspu_srem64(lhs: i64, rhs: i64) -> i64 {
+    unsafe { core::intrinsics::unchecked_rem(lhs, rhs) }
+}
+RUST
+RUSTC_BOOTSTRAP=1 "$rustc" --crate-type=lib --emit=llvm-ir \
+    -C panic=abort -C opt-level=1 \
+    -o "$tmp/integer_division.ll" "$tmp/integer_division.rs"
+
 python3 - "$tmp/stack_args.rs" <<'PY'
 from pathlib import Path
 import sys
@@ -558,7 +616,8 @@ python3 - "$tmp/scalar.ll" "$tmp/scalar-spu.ll" \
     "$tmp/optimized_loop.ll" "$tmp/optimized_loop-spu.ll" \
     "$tmp/stack_args.ll" "$tmp/stack_args-spu.ll" \
     "$tmp/dynamic_shift.ll" "$tmp/dynamic_shift-spu.ll" \
-    "$tmp/vector_abi.ll" "$tmp/vector_abi-spu.ll" <<'PY'
+    "$tmp/vector_abi.ll" "$tmp/vector_abi-spu.ll" \
+    "$tmp/integer_division.ll" "$tmp/integer_division-spu.ll" <<'PY'
 import pathlib
 import re
 import sys
@@ -650,6 +709,50 @@ Path(sys.argv[1]).write_text(
 PY
 "$spu_cc" -O0 -c -o "$tmp/vector_stack_bridge.o" \
     "$tmp/vector_stack_bridge.c"
+
+cat >"$tmp/integer_division_bridge.c" <<'C'
+#include <stdint.h>
+
+extern uint32_t cellspu_udiv32(uint32_t lhs, uint32_t rhs);
+extern uint32_t cellspu_urem32(uint32_t lhs, uint32_t rhs);
+extern int32_t cellspu_sdiv32(int32_t lhs, int32_t rhs);
+extern int32_t cellspu_srem32(int32_t lhs, int32_t rhs);
+extern uint64_t cellspu_udiv64(uint64_t lhs, uint64_t rhs);
+extern uint64_t cellspu_urem64(uint64_t lhs, uint64_t rhs);
+extern int64_t cellspu_sdiv64(int64_t lhs, int64_t rhs);
+extern int64_t cellspu_srem64(int64_t lhs, int64_t rhs);
+
+uint32_t cellspu_external_target(uint32_t value) { return value; }
+uint32_t __udivsi3(uint32_t lhs, uint32_t rhs) { return lhs / rhs; }
+uint32_t __umodsi3(uint32_t lhs, uint32_t rhs) { return lhs % rhs; }
+int32_t __divsi3(int32_t lhs, int32_t rhs) { return lhs / rhs; }
+int32_t __modsi3(int32_t lhs, int32_t rhs) { return lhs % rhs; }
+
+unsigned int cellspu_integer_division_test(void) {
+    const int64_t i64_min = (-9223372036854775807LL - 1);
+    return !(cellspu_udiv32(100, 7) == 14 &&
+             cellspu_udiv32(0xffffffffu, 3) == 1431655765u &&
+             cellspu_udiv32(3, 7) == 0 &&
+             cellspu_urem32(100, 7) == 2 &&
+             cellspu_urem32(0xffffffffu, 3) == 0 &&
+             cellspu_sdiv32(-100, 7) == -14 &&
+             cellspu_sdiv32(100, -7) == -14 &&
+             cellspu_sdiv32((-2147483647 - 1), 3) == -715827882 &&
+             cellspu_srem32(-100, 7) == -2 &&
+             cellspu_srem32(100, -7) == 2 &&
+             cellspu_srem32((-2147483647 - 1), 3) == -2 &&
+             cellspu_udiv64(0xffffffffffffffffull, 3) ==
+                 0x5555555555555555ull &&
+             cellspu_urem64(0xffffffffffffffffull, 3) == 0 &&
+             cellspu_sdiv64(i64_min, 3) == -3074457345618258602ll &&
+             cellspu_srem64(i64_min, 3) == -2 &&
+             cellspu_sdiv64(9223372036854775807ll, -7) ==
+                 -1317624576693539401ll &&
+             cellspu_srem64(-100, -7) == -2);
+}
+C
+"$spu_cc" -O1 -c -o "$tmp/integer_division_bridge.o" \
+    "$tmp/integer_division_bridge.c"
 
 cat >"$tmp/i64_compare_bridge.c" <<'C'
 extern unsigned int branch_eq_u64(unsigned long long lhs, unsigned long long rhs);
@@ -1296,10 +1399,14 @@ ASM
 
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O0 \
     -verify-machineinstrs -filetype=obj "$tmp/scalar-spu.ll" -o "$tmp/scalar.o"
-"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -mattr=+short-calls -O1 \
     -verify-machineinstrs -filetype=obj "$tmp/optimized_loop-spu.ll" \
     -o "$tmp/optimized_loop.o"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
+    -verify-machineinstrs -filetype=obj "$tmp/optimized_loop-spu.ll" \
+    -o "$tmp/optimized_loop_absolute.o"
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O0 \
+    -mattr=+short-calls \
     -verify-machineinstrs -filetype=obj "$tmp/stack_args-spu.ll" \
     -o "$tmp/stack_args.o"
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
@@ -1311,6 +1418,12 @@ ASM
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
     -verify-machineinstrs -filetype=obj "$tmp/vector_abi-spu.ll" \
     -o "$tmp/vector_abi.o"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
+    -verify-machineinstrs -filetype=obj "$tmp/integer_division-spu.ll" \
+    -o "$tmp/integer_division.o"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 \
+    -mattr=+short-calls -O1 -verify-machineinstrs -filetype=obj \
+    "$tmp/integer_division-spu.ll" -o "$tmp/integer_division_short.o"
 
 # Build the same instruction streams through LLVM's text printer and GNU's
 # assembler. Compare disassembly to cross-check the direct MC encodings while
@@ -1318,11 +1431,11 @@ ASM
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O0 \
     -verify-machineinstrs -filetype=asm "$tmp/scalar-spu.ll" -o "$tmp/scalar.s"
 "$spu_as" -o "$tmp/scalar-asm.o" "$tmp/scalar.s"
-"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -mattr=+short-calls -O1 \
     -verify-machineinstrs -filetype=asm "$tmp/optimized_loop-spu.ll" \
     -o "$tmp/optimized_loop.s"
 "$spu_as" -o "$tmp/optimized_loop-asm.o" "$tmp/optimized_loop.s"
-"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O0 \
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -mattr=+short-calls -O0 \
     -verify-machineinstrs -filetype=asm "$tmp/stack_args-spu.ll" \
     -o "$tmp/stack_args.s"
 "$spu_as" -o "$tmp/stack_args-asm.o" "$tmp/stack_args.s"
@@ -1377,6 +1490,71 @@ vector_actual=$("$spu_objdump" -d "$tmp/vector_abi.o" | \
     echo "LLVM vector addition encoding differs from GNU SPU binutils" >&2
     exit 1
 }
+
+integer_division_disassembly=$("$spu_objdump" -dr "$tmp/integer_division.o")
+cat >"$tmp/brasl_reference.s" <<'ASM'
+.text
+.globl caller
+caller:
+  brasl $lr,target
+  bi $lr
+.globl target
+target:
+  stop 0
+ASM
+"$spu_as" -o "$tmp/brasl_reference.o" "$tmp/brasl_reference.s"
+brasl_reference=$("$spu_objdump" -d "$tmp/brasl_reference.o" | \
+    awk '$6 == "brasl" { print $2 $3 $4 $5; exit }')
+brasl_actual=$("$spu_objdump" -d "$tmp/integer_division.o" | \
+    awk '$6 == "brasl" { print $2 $3 $4 $5; exit }')
+if [[ -z "$brasl_reference" || "$brasl_actual" != "$brasl_reference" ]]; then
+    printf '%s\n' "$integer_division_disassembly" >&2
+    echo "LLVM BRASL encoding differs from GNU SPU binutils" >&2
+    exit 1
+fi
+integer_division_relocations=$("$spu_readelf" -Wr "$tmp/integer_division.o")
+for helper in __divsi3 __udivsi3 __modsi3 __umodsi3 \
+              __divdi3 __udivdi3 __moddi3 __umoddi3; do
+    if ! awk -v helper="$helper" \
+            '$3 == "R_SPU_ADDR16" && $5 == helper { found = 1 } \
+             END { exit !found }' <<<"$integer_division_relocations"; then
+        printf '%s\n' "$integer_division_relocations" >&2
+        echo "LLVM default integer division object is missing the absolute call relocation for $helper" >&2
+        exit 1
+    fi
+done
+if ! awk '$3 == "R_SPU_ADDR16" && $5 == "cellspu_external_target" \
+          { found = 1 } END { exit !found }' \
+          <<<"$integer_division_relocations"; then
+    printf '%s\n' "$integer_division_relocations" >&2
+    echo "LLVM external-declaration call is missing its absolute call relocation" >&2
+    exit 1
+fi
+integer_division_short_relocations=$(
+    "$spu_readelf" -Wr "$tmp/integer_division_short.o")
+for helper in __divsi3 __udivsi3 __modsi3 __umodsi3 \
+              __divdi3 __udivdi3 __moddi3 __umoddi3; do
+    if ! awk -v helper="$helper" \
+            '$3 == "R_SPU_REL16" && $5 == helper { found = 1 } \
+             END { exit !found }' <<<"$integer_division_short_relocations"; then
+        printf '%s\n' "$integer_division_short_relocations" >&2
+        echo "LLVM short-calls object is missing the relative call relocation for $helper" >&2
+        exit 1
+    fi
+done
+optimized_loop_absolute_disassembly=$(
+    "$spu_objdump" -dr "$tmp/optimized_loop_absolute.o")
+optimized_loop_absolute_relocations=$(
+    "$spu_readelf" -Wr "$tmp/optimized_loop_absolute.o")
+if ! grep -Fq 'brasl' <<<"$optimized_loop_absolute_disassembly" || \
+   ! awk '$3 == "R_SPU_ADDR16" && $5 ~ /opaque_step/ \
+          { found = 1 } END { exit !found }' \
+          <<<"$optimized_loop_absolute_relocations"; then
+    printf '%s\n' "$optimized_loop_absolute_disassembly" >&2
+    printf '%s\n' "$optimized_loop_absolute_relocations" >&2
+    echo "LLVM default intra-module call is missing absolute BRASL/R_SPU_ADDR16" >&2
+    exit 1
+fi
 
 stack_args_disassembly=$("$spu_objdump" -dr "$tmp/stack_args.o")
 if ! grep -Eq 'lqd[[:space:]]+\$[0-9]+,160\(\$1\)' \
@@ -1499,6 +1677,33 @@ ASM
     "$tmp/vector_stack_bridge.o" \
     "$tmp/vector_abi.o"
 
+cat >"$tmp/integer_division_start.s" <<'ASM'
+.text
+.p2align 3
+.globl _start
+.type _start,@function
+_start:
+  ilhu $1,3
+  lnop
+  iohl $1,0xffe0
+  lnop
+  brsl $lr,cellspu_integer_division_test
+  lnop
+  wrch $ch28,$3
+  lnop
+  stop 0
+.size _start,.-_start
+ASM
+"$spu_as" -o "$tmp/integer_division_start.o" \
+    "$tmp/integer_division_start.s"
+libgcc=$("$spu_cc" -print-libgcc-file-name)
+"$spu_ld" -Ttext=0 -e _start -o "$tmp/integer_division.elf" \
+    "$tmp/integer_division_start.o" "$tmp/integer_division_bridge.o" \
+    "$tmp/integer_division_short.o" "$libgcc"
+"$spu_ld" -Ttext=0 -e _start -o "$tmp/integer_division_absolute.elf" \
+    "$tmp/integer_division_start.o" "$tmp/integer_division_bridge.o" \
+    "$tmp/integer_division.o" "$libgcc"
+
 cat >"$tmp/start_large_mem.s" <<'ASM'
 .text
 .p2align 3
@@ -1593,6 +1798,28 @@ if [[ "$vector_abi_bytes" != 8 || "$vector_abi_actual" != 0000000000000000 ]]; t
     exit 1
 fi
 
+if ! (cd "$tmp" && ANERG_MBOX="$tmp/integer_division_mailbox" \
+      timeout "${SPU_EMULATOR_TIMEOUT:-10s}" "$emulator" \
+      "$tmp/integer_division.elf") >"$tmp/integer_division_emulator.log" 2>&1; then
+    cat "$tmp/integer_division_emulator.log" >&2
+    echo "SPU integer division image failed or timed out in the emulator" >&2
+    exit 1
+fi
+if ! grep -Fq '####### stop instruction reached:' \
+        "$tmp/integer_division_emulator.log"; then
+    cat "$tmp/integer_division_emulator.log" >&2
+    echo "SPU integer division image did not reach stop" >&2
+    exit 1
+fi
+integer_division_bytes=$(wc -c <"$tmp/integer_division_mailbox")
+integer_division_actual=$(od -An -v -tx1 "$tmp/integer_division_mailbox" | \
+    tr -d '[:space:]')
+if [[ "$integer_division_bytes" != 4 || \
+      "$integer_division_actual" != 00000000 ]]; then
+    echo "expected signed and unsigned division/remainder checks to return 00000000; got ${integer_division_actual:-<empty>} ($integer_division_bytes bytes)" >&2
+    exit 1
+fi
+
 byte_count=$(wc -c <"$tmp/mailbox")
 actual=$(od -An -v -tx1 "$tmp/mailbox" | tr -d '[:space:]')
 expected=000068acffffbbbc000012300000567c0000444c000012350000002a
@@ -1631,4 +1858,4 @@ if [[ "$byte_count" != 464 || "$actual" != "$expected" ]]; then
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 116 main results, checked register-passed and 73rd stack-passed GCC-to-Rust v4i32 values, and validated a static pointer above 64 KiB in large-memory mode\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic and integer division, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 116 main results, checked GCC-to-Rust vector ABI and signed/unsigned division through 64 bits, and validated a static pointer above 64 KiB in large-memory mode\n'

@@ -99,6 +99,26 @@ feature with `RUSTC_BOOTSTRAP=1` and retargets host Rust LLVM IR. It covers
 these narrow `v4i32` cases, not a stable Rust SIMD API or general vector
 support.
 
+Integer division and remainder for signed and unsigned `i32` and `i64` use
+LLVM runtime libcalls with SPU ABI names (`__divsi3`, `__udivsi3`, `__modsi3`,
+`__umodsi3`, and their `di3` forms). In normal local-store mode, direct calls
+to functions and runtime helpers use absolute `BRASL`/`R_SPU_ADDR16` by
+default, which can address any instruction in the 256 KiB local store. The
+optional `+short-calls` feature selects `BRSL`/`R_SPU_REL16`; the emulator
+fixtures use it because the available emulator does not implement `BRASL`.
+The SPU linker accepts an out-of-range `R_SPU_REL16` relocation and truncates
+its displacement, so short calls are only valid when callers can guarantee
+every target is within the signed 16-bit word range. The backend does not
+create call veneers. `+large_mem` uses indirect address sequences instead.
+The smoke test supplies 32-bit helper functions compiled by SPU GCC and links
+the installed SPU `libgcc` for the 64-bit helpers; it checks the default
+absolute objects and emulator results from the short-call object for all four
+signedness/width combinations and both quotient and remainder. The test uses
+Rust's unchecked division intrinsics to isolate backend codegen, so it does not
+validate Rust's divide-by-zero or signed-overflow panic paths. GNU binutils
+also confirm the absolute `BRASL` encoding and relocation for an ordinary
+external declaration; that call is not executed in the emulator.
+
 In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
 from a minimal `#![no_core]` fixture with `u32` addition, `u64`
@@ -217,7 +237,10 @@ writer for the instruction and relocation forms exercised by the smoke check.
 `R_SPU_ADDR32`, and `R_SPU_REL16` relocations.
 The object writer also maps `R_SPU_REL32`, but no LLVM-generated fixture
 currently exercises it. This work does not implement or validate the full SPU
-instruction encoder or relocation set.
+instruction encoder or relocation set. Absolute `BRASL` calls to both
+defined functions and external symbols are encoded and checked against GNU
+SPU binutils. The emulator executes optional short-relative-call fixtures,
+but it does not execute absolute calls in this validation environment.
 High/low symbol relocations are tested for the address sequence selected by
 `+large_mem`, with the pointer linked at `0x10010`. This does not validate
 arbitrary global addressing or all large-memory code paths.

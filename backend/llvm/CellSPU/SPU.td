@@ -47,6 +47,9 @@ def DefaultProc: SubtargetFeature<"", "ProcDirective", "SPU::DEFAULT_PROC", "">;
 def LargeMemFeature:
   SubtargetFeature<"large_mem","UseLargeMem", "true",
                    "Use large (>256) LSA memory addressing [default = false]">;
+def ShortCallsFeature:
+  SubtargetFeature<"short-calls", "UseShortCalls", "true",
+                   "Use PC-relative direct calls (range-limited)">;
 
 def SPURev0 : Processor<"v0", SPUItineraries, [DefaultProc]>;
 
