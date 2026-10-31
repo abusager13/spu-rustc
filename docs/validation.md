@@ -884,3 +884,12 @@ physical hardware.
   for zero now passes five arms and six fallbacks in the emulator; its
   comparison instruction encodings match GNU SPU binutils. These checks do not
   establish vector comparison, general Rust ABI, `core`, or hardware behavior.
+- Added a dedicated LLVM IR data-relocation fixture for `R_SPU_REL32`, which
+  the object writer supported but had not previously emitted in a test. The
+  relocation record matches GNU `spu-as` for the equivalent `target - place`
+  expression. GNU `spu-ld` links it with a C-defined external target, and the
+  emulator verifies that adding the stored relative displacement to its own
+  address reconstructs the target address. The full LLVM smoke suite still
+  passes its 118 main mailbox results, the vector ABI and division images, and
+  the large-memory pointer image. This checks one data-relative relocation
+  form; it does not validate the full SPU relocation set.

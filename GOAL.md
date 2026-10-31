@@ -126,6 +126,8 @@ loads, a byte store, aligned and packed `u64` loads and stores, and packed
 halfword and doubleword accesses that cross a 16-byte boundary. A Rust static
 pointer is read through `R_SPU_ADDR18` and `R_SPU_ADDR32` relocations; a second
 large-memory image tests `R_SPU_ADDR16_HI`/`LO` at linked address `0x10010`.
+A separate LLVM IR fixture checks `R_SPU_REL32` against GNU assembler output
+and confirms the linked target address in the emulator.
 A GCC caller also passes two `u64` values to Rust and checks the returned sum. The 73rd
 `u32` argument also passes through
 GCC-to-Rust, Rust forwarding, and a Rust call with constant arguments. The smoke harness

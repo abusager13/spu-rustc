@@ -2068,6 +2068,102 @@ if [[ "$integer_division_bytes" != 4 || \
     exit 1
 fi
 
+cat >"$tmp/relative_relocation.ll" <<'IR'
+target datalayout = "E-m:e-p:32:32-i64:64-n32:64-S128"
+target triple = "cellspu-unknown-elf"
+
+@spu_external_target = external global i32
+@spu_relative_fixture = global i32 sub (i32 ptrtoint (ptr @spu_external_target to i32), i32 ptrtoint (ptr @spu_relative_fixture to i32)), align 4
+
+define i32 @read_relative_fixture() {
+entry:
+  %value = load i32, ptr @spu_relative_fixture, align 4
+  ret i32 %value
+}
+IR
+"$llc" -filetype=obj -verify-machineinstrs \
+    -o "$tmp/relative_relocation.o" "$tmp/relative_relocation.ll"
+relative_relocations=$("$spu_readelf" -Wr "$tmp/relative_relocation.o")
+if ! awk '$3 == "R_SPU_REL32" && $5 == "spu_external_target" \
+          { found = 1 } END { exit !found }' <<<"$relative_relocations"; then
+    printf '%s\n' "$relative_relocations" >&2
+    echo "LLVM relative-address object is missing R_SPU_REL32 for its external target" >&2
+    exit 1
+fi
+
+cat >"$tmp/relative_relocation_reference.s" <<'ASM'
+.data
+.globl spu_relative_reference
+spu_relative_reference:
+  .long spu_external_target - spu_relative_reference
+ASM
+"$spu_as" -o "$tmp/relative_relocation_reference.o" \
+    "$tmp/relative_relocation_reference.s"
+relative_reference_relocations=$(
+    "$spu_readelf" -Wr "$tmp/relative_relocation_reference.o")
+if ! awk '$3 == "R_SPU_REL32" && $5 == "spu_external_target" \
+          { found = 1 } END { exit !found }' \
+          <<<"$relative_reference_relocations"; then
+    printf '%s\n' "$relative_reference_relocations" >&2
+    echo "GNU SPU assembler reference is missing the expected R_SPU_REL32" >&2
+    exit 1
+fi
+
+cat >"$tmp/relative_relocation_bridge.c" <<'C'
+extern unsigned int spu_relative_fixture;
+extern unsigned int spu_external_target;
+extern unsigned int read_relative_fixture(void);
+
+unsigned int spu_external_target = 0x13579bdf;
+
+unsigned int check_relative_relocation(void) {
+    unsigned int resolved = (unsigned int)&spu_relative_fixture +
+                            read_relative_fixture();
+    return resolved == (unsigned int)&spu_external_target ? 0 : 1;
+}
+C
+"$spu_cc" -O0 -c -o "$tmp/relative_relocation_bridge.o" \
+    "$tmp/relative_relocation_bridge.c"
+cat >"$tmp/relative_relocation_start.s" <<'ASM'
+.text
+.globl _start
+_start:
+  ilhu $1, 3
+  iohl $1, 0xffe0
+  il $2, 0
+  brsl $lr, check_relative_relocation
+  wrch $ch28, $3
+  stop 0
+ASM
+"$spu_as" -o "$tmp/relative_relocation_start.o" \
+    "$tmp/relative_relocation_start.s"
+"$spu_ld" -Ttext=0 -e _start -o "$tmp/relative_relocation.elf" \
+    "$tmp/relative_relocation_start.o" \
+    "$tmp/relative_relocation_bridge.o" \
+    "$tmp/relative_relocation.o"
+if ! (cd "$tmp" && ANERG_MBOX="$tmp/relative_relocation_mailbox" \
+      timeout "${SPU_EMULATOR_TIMEOUT:-10s}" "$emulator" \
+      "$tmp/relative_relocation.elf") \
+      >"$tmp/relative_relocation_emulator.log" 2>&1; then
+    cat "$tmp/relative_relocation_emulator.log" >&2
+    echo "SPU relative-relocation image failed or timed out in the emulator" >&2
+    exit 1
+fi
+if ! grep -Fq '####### stop instruction reached:' \
+        "$tmp/relative_relocation_emulator.log"; then
+    cat "$tmp/relative_relocation_emulator.log" >&2
+    echo "SPU relative-relocation image did not reach stop" >&2
+    exit 1
+fi
+relative_relocation_bytes=$(wc -c <"$tmp/relative_relocation_mailbox")
+relative_relocation_actual=$(od -An -v -tx1 \
+    "$tmp/relative_relocation_mailbox" | tr -d '[:space:]')
+if [[ "$relative_relocation_bytes" != 4 || \
+      "$relative_relocation_actual" != 00000000 ]]; then
+    echo "expected resolved relative target check 00000000; got ${relative_relocation_actual:-<empty>} ($relative_relocation_bytes bytes)" >&2
+    exit 1
+fi
+
 byte_count=$(wc -c <"$tmp/mailbox")
 actual=$(od -An -v -tx1 "$tmp/mailbox" | tr -d '[:space:]')
 expected=000068acffffbbbc000012300000567c0000444c000012350000002a
@@ -2106,4 +2202,4 @@ if [[ "$byte_count" != 472 || "$actual" != "$expected" ]]; then
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic and integer division, f32/f64 float codegen, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 118 main results and checked vector ABI and division through 64 bits; GNU SPU assembler matched float encodings, which the emulator cannot execute\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic and integer division, f32/f64 float codegen, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 118 main results and checked vector ABI, division, and R_SPU_REL32; GNU assembler matched float encodings and the relative relocation, while the emulator cannot execute the floating-point instructions\n'

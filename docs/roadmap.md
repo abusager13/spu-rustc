@@ -183,7 +183,9 @@ execution gate is passed.
    `rustc --target=spu` route. LLVM directly emits ELF objects for the tested
    subset; the MC encoder and relocation support remain incomplete. The smoke
    test now checks direct and split-half static-pointer addressing plus
-   initialized-pointer relocation. See
+   initialized-pointer relocation. A separate LLVM IR fixture checks the
+   `R_SPU_REL32` relocation against GNU assembler output and verifies the
+   resolved external address in the emulator. See
    `backend/llvm/README.md` for the reproduction command and exact limits.
 
    A separate vector ABI image compiles a Rust four-lane `u32` addition,

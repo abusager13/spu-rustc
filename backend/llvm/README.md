@@ -253,10 +253,12 @@ LLVM now has an experimental MC code emitter, assembler backend, and ELF object
 writer for the instruction and relocation forms exercised by the smoke check.
 `llc -filetype=obj` directly emits the tested CellSPU objects, including
 `R_SPU_ADDR16`, `R_SPU_ADDR16_HI`, `R_SPU_ADDR16_LO`, `R_SPU_ADDR18`,
-`R_SPU_ADDR32`, and `R_SPU_REL16` relocations.
-The object writer also maps `R_SPU_REL32`, but no LLVM-generated fixture
-currently exercises it. This work does not implement or validate the full SPU
-instruction encoder or relocation set. Absolute `BRASL` calls to both
+`R_SPU_ADDR32`, `R_SPU_REL16`, and `R_SPU_REL32` relocations. A dedicated LLVM
+IR fixture stores the distance from its own address to an external target;
+its relocation record matches the equivalent GNU assembler expression, and a
+linked emulator test adds the stored distance back to the data address and
+confirms it reaches the target. This work does not implement or validate the
+full SPU instruction encoder or relocation set. Absolute `BRASL` calls to both
 defined functions and external symbols are encoded and checked against GNU
 SPU binutils. The emulator executes optional short-relative-call fixtures,
 but it does not execute absolute calls in this validation environment.
