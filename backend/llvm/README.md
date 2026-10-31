@@ -138,12 +138,12 @@ NaNs and subnormals, and the floating-point C ABI remain unvalidated.
 In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
 from a minimal `#![no_core]` fixture with `u32` addition, `u64`
-addition/subtraction, 64-bit bitwise AND, constant and variable `u64` left and
-logical-right shifts, signed `i64` arithmetic-right shifts, and wrapping `u64`
-multiplication. The generated carry, borrow, select-mask, rotate, quadword
+addition/subtraction, 64-bit bitwise AND/OR/XOR, constant and variable `u64`
+left and logical-right shifts, signed `i64` arithmetic-right shifts, and
+wrapping `u64` multiplication. The generated carry, borrow, select-mask, rotate, quadword
 shift, and multiply encodings match GNU SPU binutils byte for byte. A small SPU
 entry wrapper exercises carry, borrow, high-word, bitwise, and left- and
-right-shift results; all 88 mailbox values pass in the emulator. A separate
+right-shift results; all 92 mailbox values pass in the emulator. A separate
 image exercises four 64-bit wrapping products and checks both words of each
 result, for eight additional mailbox values.
 Variable shift counts are 0, 1, 7, 8, 31, 32, 40, 63, 64, and 65. The test

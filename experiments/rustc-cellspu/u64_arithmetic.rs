@@ -96,6 +96,34 @@ impl BitAnd for u64 {
     }
 }
 
+#[lang = "bitor"]
+pub trait BitOr<Rhs = Self> {
+    type Output;
+    fn bitor(self, rhs: Rhs) -> Self::Output;
+}
+
+impl BitOr for u64 {
+    type Output = u64;
+
+    fn bitor(self, rhs: u64) -> u64 {
+        self | rhs
+    }
+}
+
+#[lang = "bitxor"]
+pub trait BitXor<Rhs = Self> {
+    type Output;
+    fn bitxor(self, rhs: Rhs) -> Self::Output;
+}
+
+impl BitXor for u64 {
+    type Output = u64;
+
+    fn bitxor(self, rhs: u64) -> u64 {
+        self ^ rhs
+    }
+}
+
 #[inline(never)]
 #[unsafe(no_mangle)]
 pub fn add_u64(lhs: u64, rhs: u64) -> u64 {
@@ -142,6 +170,38 @@ pub fn high_word_and() -> u32 {
 #[unsafe(no_mangle)]
 pub fn low_word_and() -> u32 {
     and_u64(0x1234_5678_9abc_def0, 0x0f0f_0f0f_f0f0_f0f0) as u32
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+pub fn or_u64(lhs: u64, rhs: u64) -> u64 {
+    lhs | rhs
+}
+
+#[unsafe(no_mangle)]
+pub fn high_word_or() -> u32 {
+    (or_u64(0x1234_5678_9abc_def0, 0x0f0f_0f0f_f0f0_f0f0) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn low_word_or() -> u32 {
+    or_u64(0x1234_5678_9abc_def0, 0x0f0f_0f0f_f0f0_f0f0) as u32
+}
+
+#[inline(never)]
+#[unsafe(no_mangle)]
+pub fn xor_u64(lhs: u64, rhs: u64) -> u64 {
+    lhs ^ rhs
+}
+
+#[unsafe(no_mangle)]
+pub fn high_word_xor() -> u32 {
+    (xor_u64(0x1234_5678_9abc_def0, 0x0f0f_0f0f_f0f0_f0f0) >> 32) as u32
+}
+
+#[unsafe(no_mangle)]
+pub fn low_word_xor() -> u32 {
+    xor_u64(0x1234_5678_9abc_def0, 0x0f0f_0f0f_f0f0_f0f0) as u32
 }
 
 #[inline(never)]

@@ -223,11 +223,11 @@ execution gate is passed.
    A direct-rustc integration proof now complements this harness: a custom
    stage1 rustc built against the CellSPU LLVM target compiles a minimal
    `#![no_core]` Rust fixture directly to ELF32 big-endian `EM_SPU` objects.
-   It covers `u32` addition, `u64` addition/subtraction, 64-bit bitwise AND,
-   and constant and variable `u64` left and logical-right shifts, plus signed
-   `i64` arithmetic-right shifts and `u64` wrapping multiplication. GNU SPU
+   It covers `u32` addition, `u64` addition/subtraction and bitwise AND, OR,
+   and XOR, plus constant and variable `u64` left and logical-right shifts,
+   signed `i64` arithmetic-right shifts, and `u64` wrapping multiplication. GNU SPU
    binutils match the generated carry, borrow, logic, immediate, shift, and
-   multiply encodings. The arithmetic and shift image checks 88 results; a
+   multiply encodings. The arithmetic and shift image checks 92 results; a
    separate image checks both words from four multiplication products. The
    tests include variable shift counts across byte and word boundaries, counts
    64 and 65, constant shifts by 13, and several signed and unsigned input

@@ -247,6 +247,21 @@ _start:
   shift_pair 0x8123,0x4567,0x89ab,0xcdef,65,shift_arithmetic_high,shift_arithmetic_low
   shift_pair 0x0123,0x4567,0x89ab,0xcdef,13,shift_arithmetic_high,shift_arithmetic_low
   shift_pair 0x8123,0x4567,0x89ab,0xcdef,13,shift_arithmetic_high_by_13,shift_arithmetic_low_by_13
+  brsl $0,high_word_or
+  lnop
+  wrch $ch28,$3
+  lnop
+  brsl $0,low_word_or
+  lnop
+  wrch $ch28,$3
+  lnop
+  brsl $0,high_word_xor
+  lnop
+  wrch $ch28,$3
+  lnop
+  brsl $0,low_word_xor
+  lnop
+  wrch $ch28,$3
   stop 0
 .size _start,.-_start
 

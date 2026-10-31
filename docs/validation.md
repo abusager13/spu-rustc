@@ -897,3 +897,10 @@ physical hardware.
   passes its 118 main mailbox results, the vector ABI and division images, and
   the large-memory pointer image. This checks one data-relative relocation
   form; it does not validate the full SPU relocation set.
+- Extended direct native rustc coverage from `u64` bitwise AND to AND, OR, and
+  XOR. The new Rust-ABI fixture returns the high and low words of each result;
+  LLVM's `and`, `or`, and `xor` encodings match GNU SPU binutils, and the
+  emulator checks all four added words. The direct-rustc arithmetic and shift
+  image now passes 92 mailbox results, plus the separate four-product image.
+  This remains `#![no_core]` coverage and does not establish ordinary
+  `#![no_std]` or `core` support.

@@ -140,7 +140,7 @@ for expected in "Class:                             ELF32" \
     }
 done
 
-instructions='^(cg|addx|and|bg|sfx|iohl|fsm|fsmbi|selb|andi|sfi|rotmi|shlqby|shlqbi|shlqbyi|shlqbii|rotqmby|rotqmbi|rotqmbyi|rotqmbii|rotqbybi|rotqbi|rotqbyi|rotqbii)$'
+instructions='^(cg|addx|and|or|xor|bg|sfx|iohl|fsm|fsmbi|selb|andi|sfi|rotmi|shlqby|shlqbi|shlqbyi|shlqbii|rotqmby|rotqmbi|rotqmbyi|rotqmbii|rotqbybi|rotqbi|rotqbyi|rotqbii)$'
 "$spu_objdump" -d "$tmp/u64_arithmetic.o" | awk -v instructions="$instructions" '
     BEGIN { print ".text" }
     $6 ~ instructions {
@@ -152,9 +152,9 @@ instructions='^(cg|addx|and|bg|sfx|iohl|fsm|fsmbi|selb|andi|sfi|rotmi|shlqby|shl
 ' >"$tmp/emitted-encoding.s"
 "$spu_as" -o "$tmp/emitted-encoding.o" "$tmp/emitted-encoding.s"
 reference=$("$spu_objdump" -d "$tmp/emitted-encoding.o" | \
-    awk '$6 ~ /^(cg|addx|and|bg|sfx|iohl|fsm|fsmbi|selb|andi|sfi|rotmi|shlqby|shlqbi|shlqbyi|shlqbii|rotqmby|rotqmbi|rotqmbyi|rotqmbii|rotqbybi|rotqbi|rotqbyi|rotqbii)$/ { print $2 $3 $4 $5 }')
+    awk '$6 ~ /^(cg|addx|and|or|xor|bg|sfx|iohl|fsm|fsmbi|selb|andi|sfi|rotmi|shlqby|shlqbi|shlqbyi|shlqbii|rotqmby|rotqmbi|rotqmbyi|rotqmbii|rotqbybi|rotqbi|rotqbyi|rotqbii)$/ { print $2 $3 $4 $5 }')
 actual_encoding=$("$spu_objdump" -d "$tmp/u64_arithmetic.o" | \
-    awk '$6 ~ /^(cg|addx|and|bg|sfx|iohl|fsm|fsmbi|selb|andi|sfi|rotmi|shlqby|shlqbi|shlqbyi|shlqbii|rotqmby|rotqmbi|rotqmbyi|rotqmbii|rotqbybi|rotqbi|rotqbyi|rotqbii)$/ { print $2 $3 $4 $5 }')
+    awk '$6 ~ /^(cg|addx|and|or|xor|bg|sfx|iohl|fsm|fsmbi|selb|andi|sfi|rotmi|shlqby|shlqbi|shlqbyi|shlqbii|rotqmby|rotqmbi|rotqmbyi|rotqmbii|rotqbybi|rotqbi|rotqbyi|rotqbii)$/ { print $2 $3 $4 $5 }')
 if [[ "$reference" != "$actual_encoding" ]]; then
     echo "LLVM SPU instruction encodings differ from GNU SPU binutils" >&2
     echo "SPU assembler: ${reference//$'\n'/ }" >&2
@@ -172,6 +172,14 @@ grep -Eq 'sfx[[:space:]]+\$' <<<"$disassembly" || {
 }
 grep -Eq 'and[[:space:]]+\$' <<<"$disassembly" || {
     echo "Rust u64 bitwise object did not contain native SPU and" >&2
+    exit 1
+}
+grep -Eq 'or[[:space:]]+\$' <<<"$disassembly" || {
+    echo "Rust u64 bitwise object did not contain native SPU or" >&2
+    exit 1
+}
+grep -Eq 'xor[[:space:]]+\$' <<<"$disassembly" || {
+    echo "Rust u64 bitwise object did not contain native SPU xor" >&2
     exit 1
 }
 for instruction in fsmbi selb andi rotmi shlqby shlqbi shlqbyi shlqbii \
@@ -200,13 +208,23 @@ grep -Fq '####### stop instruction reached:' "$tmp/u64_emulator.log" || {
     exit 1
 }
 
+mailbox_size=$(wc -c <"$tmp/u64_mailbox")
+[[ "$mailbox_size" -eq 368 ]] || {
+    echo "Expected 92 u64 arithmetic/shift result words, got $mailbox_size bytes" >&2
+    exit 1
+}
 actual=$(od -An -N352 -tx1 "$tmp/u64_mailbox" | tr -d '[:space:]')
 [[ "$actual" == 00000001000000002345789affffffff00000000012334560204060890b0d0f08123456789abcdef02468acf13579bde91a2b3c4d5e6f78023456789abcdef00c4d5e6f78000000089abcdef00000000abcdef000000000080000000000000008123456789abcdef02468acf13579bde123456789abcdef09abcdef00000000097530eca86420000000000000000000068acf13579bde0008123456789abcdef4091a2b3c4d5e6f70102468acf13579b008123456789abcd0000000102468acf0000000081234567000000000081234500000000000000018123456789abcdef4091a2b3c4d5e6f700123456789abcde0007f6e5d4c3b2a10000091a2b3c4d5e8123456789abcdefc091a2b3c4d5e6f7ff02468acf13579bff8123456789abcdffffffff02468acfffffffff81234567ffffffffff812345ffffffffffffffff8123456789abcdefc091a2b3c4d5e6f70000091a2b3c4d5efffc091a2b3c4d5e ]] || {
     echo "Unexpected Rust CellSPU arithmetic/shift results: ${actual:-<empty>}" >&2
     exit 1
 }
+bitwise_actual=$(od -An -j352 -N16 -tx1 "$tmp/u64_mailbox" | tr -d '[:space:]')
+[[ "$bitwise_actual" == 1f3f5f7ffafcfef01d3b59776a4c2e00 ]] || {
+    echo "Unexpected Rust CellSPU u64 OR/XOR results: ${bitwise_actual:-<empty>}" >&2
+    exit 1
+}
 
-echo "rustc 1.99 CellSPU no_core integer arithmetic and shifts: GNU-matched native encodings; emulator checked 88 add, subtract, bitwise, logical, and arithmetic shift results and reached stop"
+echo "rustc 1.99 CellSPU no_core integer arithmetic and shifts: GNU-matched native encodings; emulator checked 92 add, subtract, AND/OR/XOR, logical, and arithmetic shift results and reached stop"
 
 "$rustc" -Z unstable-options \
     --target="$target_short_calls" \

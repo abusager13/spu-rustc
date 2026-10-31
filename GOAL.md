@@ -159,11 +159,11 @@ See
 
 A separate custom stage1 rustc now sends a minimal `#![no_core]` Rust fixture
 directly through the maintained LLVM target to native SPU ELF. It covers `u32`
-addition, `u64` addition/subtraction, 64-bit bitwise AND, constant and variable
-`u64` left and logical-right shifts, signed `i64` arithmetic-right shifts, and
-`u64` wrapping multiplication. GNU SPU binutils match the carry, borrow, logic,
+addition, `u64` addition/subtraction, bitwise AND, OR, and XOR, constant and
+variable `u64` left and logical-right shifts, signed `i64` arithmetic-right
+shifts, and `u64` wrapping multiplication. GNU SPU binutils match the carry, borrow, logic,
 immediate, shift, and multiply encodings. The arithmetic and shift image checks
-88 results; a separate multiplication image checks four products (eight words)
+92 results; a separate multiplication image checks four products (eight words)
 in the emulator. The variable shifts test counts 0, 1, 7,
 8, 31, 32, 40, 63, 64, and 65; constant shifts by 13 and multiple signed and
 unsigned 64-bit input patterns are also covered. This remains a narrow

@@ -71,10 +71,11 @@ cases and the floating-point C ABI remain unvalidated.
 A separate direct-rustc proof builds a custom stage1 compiler against this LLVM
 target and compiles a minimal `#![no_core]` fixture straight to big-endian
 `EM_SPU` objects. It exercises `u32` addition, `u64` addition/subtraction,
-64-bit bitwise AND, constant and variable `u64` left and logical-right shifts,
-signed `i64` arithmetic-right shifts, and `u64` wrapping multiplication.
+64-bit bitwise AND, OR, and XOR, constant and variable `u64` left and
+logical-right shifts, signed `i64` arithmetic-right shifts, and `u64` wrapping
+multiplication.
 GNU SPU binutils match the generated carry, borrow, logic, immediate, shift,
-and multiply encodings. The arithmetic and shift image checks 88 results; a
+and multiply encodings. The arithmetic and shift image checks 92 results; a
 separate multiplication image checks four products (eight words) in the
 emulator. The products cover carry between partial products, wraparound, and
 mixed high/low words. Variable shifts cover counts 0, 1, 7, 8, 31, 32, 40, 63,
