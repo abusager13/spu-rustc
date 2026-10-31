@@ -36,6 +36,15 @@ unsigned `i32` and `i16` branches, twenty `i64` comparisons, and a GCC-to-Rust
 call in its body. This
 does not provide `rustc --target=spu` or build `core` for SPU.
 
+The LLVM smoke suite also compiles one four-lane `u32` Rust vector addition.
+A GCC C caller passes both vectors, checks all four returned lanes, and gets a
+success result in the emulator; GNU binutils confirm the native SPU `a`
+encoding. A second call passes 72 vectors in registers and a 73rd on the stack;
+the Rust callee returns that last vector and the GCC caller checks all four
+lanes. This probe uses host Rust IR retargeted to CellSPU and Rust's internal
+`repr(simd)` feature under `RUSTC_BOOTSTRAP=1`. It checks these `v4i32` paths,
+not a supported Rust SIMD API or the full vector ABI.
+
 A separate direct-rustc proof builds a custom stage1 compiler against this LLVM
 target and compiles a minimal `#![no_core]` fixture straight to big-endian
 `EM_SPU` objects. It exercises `u32` addition, `u64` addition/subtraction,

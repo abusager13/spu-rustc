@@ -47,6 +47,13 @@ the lang items needed for these arithmetic operations; this does not build
 or test a PPU loader. A separate Cargo `-Z build-std=core` probe reaches the
 `core` crate but fails when rustc panics on the C ABI of `core::ffi::VaList`;
 SPU foreign-ABI lowering must be integrated in rustc before `core` can build.
+There is also a target-specific `VaList` layout requirement: the
+[SPU ABI specification, version 1.9](https://www.ps3linux.net/ps3-filez/cellsdk-docs/3.1/standards/SPU_ABI-Specification_1.9.pdf)
+defines `va_list` as a one-element array of a struct containing two pointers,
+each aligned to 16 bytes. The installed SPU GCC confirms a 32-byte `va_list`.
+Rust's generic fallback for the currently unrecognized `spu` architecture is
+only one pointer, so building `core` correctly requires both foreign-ABI
+classification and a matching target-specific `core::ffi::VaList` layout.
 
 The rustc build also needs a narrow compatibility bridge: its LLVM build glue
 expects PowerPC initializer names and a `powerpc` component for this target.

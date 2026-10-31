@@ -815,3 +815,13 @@ physical hardware.
   all 76 unit tests and six end-to-end tests. Sparse match coverage remains
   one specific control-flow shape; general switch and enum lowering, ordinary
   `#![no_std]`, SPU `core`, and PPU loading remain future work.
+- Added a separate CellSPU vector C-ABI image to the LLVM smoke suite. A Rust
+  `v4i32` addition is called by a GNU SPU GCC C caller, which checks every
+  output lane. LLVM's `a` encoding matches GNU `spu-as`. A second GCC call
+  passes 72 register vectors and a 73rd vector on the stack; the Rust callee
+  returns that argument and the caller verifies all four lanes. The emulator
+  reaches `stop` with zero success results for both cases. This host-rustc
+  retargeting probe uses the internal `repr(simd)` feature under
+  `RUSTC_BOOTSTRAP=1`; it does not provide a supported Rust SIMD API or broad
+  vector-ABI coverage. The LLVM smoke suite passed all 116 main mailbox values
+  plus these two separate vector ABI cases.

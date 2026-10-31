@@ -183,6 +183,15 @@ execution gate is passed.
    initialized-pointer relocation. See
    `backend/llvm/README.md` for the reproduction command and exact limits.
 
+   A separate vector ABI image compiles a Rust four-lane `u32` addition,
+   checks the `a` encoding against GNU SPU binutils, and calls it from a GCC
+   C caller that verifies all four returned lanes in the emulator. It also
+   passes 72 register vectors and a 73rd stack vector from GCC to Rust; the
+   callee returns that final vector for the caller to check. The host-rustc
+   retargeting path uses `RUSTC_BOOTSTRAP=1` for the internal `repr(simd)`
+   fixture. These are narrow `v4i32` ABI cases, not a supported Rust SIMD API
+   or broad vector-ABI validation.
+
    A direct-rustc integration proof now complements this harness: a custom
    stage1 rustc built against the CellSPU LLVM target compiles a minimal
    `#![no_core]` Rust fixture directly to ELF32 big-endian `EM_SPU` objects.

@@ -132,7 +132,12 @@ and ELF writer cover only the tested instruction and relocation subset.
 The translator remains a separate validation harness, not the primary
 compiler. This is still host `rustc` LLVM IR retargeted with a custom `llc`,
 not `rustc --target=spu`; SPU `core`, full ABI support, and broader LLVM object
-emission remain future work. See
+emission remain future work. A separate vector ABI image checks a Rust-generated
+`v4i32` addition called from GCC, plus a 73rd vector parameter passed on the
+stack and returned by Rust; the emulator verifies every result lane. It uses
+the host-rustc retargeting route and an internal SIMD representation feature;
+these are narrow ABI cases, not a supported vector API.
+See
 [the LLVM backend port](backend/llvm/README.md),
 [the architecture investigation](docs/architecture.md), and
 [the milestone plan](docs/roadmap.md).

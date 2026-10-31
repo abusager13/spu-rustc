@@ -504,6 +504,34 @@ RUST
 "$rustc" --crate-type=lib --emit=llvm-ir -C panic=abort -C opt-level=1 \
     -o "$tmp/optimized_loop.ll" "$tmp/optimized_loop.rs"
 
+cat >"$tmp/vector_abi.rs" <<'RUST'
+#![no_std]
+#![feature(repr_simd, core_intrinsics)]
+#![allow(internal_features, improper_ctypes_definitions, unused_variables)]
+
+#[repr(simd)]
+#[derive(Clone, Copy)]
+pub struct U32x4([u32; 4]);
+
+#[unsafe(no_mangle)]
+pub extern "C" fn cellspu_vector_add(lhs: U32x4, rhs: U32x4) -> U32x4 {
+    unsafe { core::intrinsics::simd::simd_add(lhs, rhs) }
+}
+RUST
+python3 - "$tmp/vector_abi.rs" <<'PY'
+from pathlib import Path
+import sys
+
+params = ", ".join(f"a{i}: U32x4" for i in range(73))
+Path(sys.argv[1]).open("a").write(
+    "\n#[inline(never)]\n#[unsafe(no_mangle)]\n"
+    f'pub extern "C" fn cellspu_vector_last_arg({params}) -> U32x4 {{ a72 }}\n'
+)
+PY
+RUSTC_BOOTSTRAP=1 "$rustc" --crate-type=lib --emit=llvm-ir \
+    -C panic=abort -C opt-level=1 \
+    -o "$tmp/vector_abi.ll" "$tmp/vector_abi.rs"
+
 python3 - "$tmp/stack_args.rs" <<'PY'
 from pathlib import Path
 import sys
@@ -529,7 +557,8 @@ PY
 python3 - "$tmp/scalar.ll" "$tmp/scalar-spu.ll" \
     "$tmp/optimized_loop.ll" "$tmp/optimized_loop-spu.ll" \
     "$tmp/stack_args.ll" "$tmp/stack_args-spu.ll" \
-    "$tmp/dynamic_shift.ll" "$tmp/dynamic_shift-spu.ll" <<'PY'
+    "$tmp/dynamic_shift.ll" "$tmp/dynamic_shift-spu.ll" \
+    "$tmp/vector_abi.ll" "$tmp/vector_abi-spu.ll" <<'PY'
 import pathlib
 import re
 import sys
@@ -578,6 +607,49 @@ unsigned int gcc_call_max_u16(unsigned short lhs, unsigned short rhs) {
 }
 C
 "$spu_cc" -O0 -c -o "$tmp/abi_bridge.o" "$tmp/abi_bridge.c"
+
+cat >"$tmp/vector_abi_bridge.c" <<'C'
+#include <spu_intrinsics.h>
+
+typedef __vector unsigned int vec4u32;
+extern vec4u32 cellspu_vector_add(vec4u32 lhs, vec4u32 rhs);
+
+unsigned int cellspu_vector_abi_test(void) {
+    vec4u32 lhs = {1, 2, 0x7fffffff, 0xffffffff};
+    vec4u32 rhs = {4, 8, 1, 2};
+    vec4u32 result = cellspu_vector_add(lhs, rhs);
+
+    return !(spu_extract(result, 0) == 5 &&
+             spu_extract(result, 1) == 10 &&
+             spu_extract(result, 2) == 0x80000000 &&
+             spu_extract(result, 3) == 1);
+}
+C
+"$spu_cc" -O0 -c -o "$tmp/vector_abi_bridge.o" "$tmp/vector_abi_bridge.c"
+
+python3 - "$tmp/vector_stack_bridge.c" <<'PY'
+from pathlib import Path
+import sys
+
+params = ", ".join(f"vec4u32 a{i}" for i in range(73))
+args = ", ".join(["zero"] * 72 + ["last"])
+Path(sys.argv[1]).write_text(
+    "#include <spu_intrinsics.h>\n"
+    "typedef __vector unsigned int vec4u32;\n"
+    f"extern vec4u32 cellspu_vector_last_arg({params});\n"
+    "unsigned int cellspu_vector_stack_test(void) {\n"
+    "    vec4u32 zero = {0, 0, 0, 0};\n"
+    "    vec4u32 last = {0x11111111, 0x22222222, 0x33333333, 0x44444444};\n"
+    f"    vec4u32 result = cellspu_vector_last_arg({args});\n"
+    "    return !(spu_extract(result, 0) == 0x11111111 &&\n"
+    "             spu_extract(result, 1) == 0x22222222 &&\n"
+    "             spu_extract(result, 2) == 0x33333333 &&\n"
+    "             spu_extract(result, 3) == 0x44444444);\n"
+    "}\n"
+)
+PY
+"$spu_cc" -O0 -c -o "$tmp/vector_stack_bridge.o" \
+    "$tmp/vector_stack_bridge.c"
 
 cat >"$tmp/i64_compare_bridge.c" <<'C'
 extern unsigned int branch_eq_u64(unsigned long long lhs, unsigned long long rhs);
@@ -1236,6 +1308,9 @@ ASM
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -mattr=+large_mem -O1 \
     -verify-machineinstrs -filetype=obj "$tmp/dynamic_shift-spu.ll" \
     -o "$tmp/dynamic_shift_large.o"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
+    -verify-machineinstrs -filetype=obj "$tmp/vector_abi-spu.ll" \
+    -o "$tmp/vector_abi.o"
 
 # Build the same instruction streams through LLVM's text printer and GNU's
 # assembler. Compare disassembly to cross-check the direct MC encodings while
@@ -1282,6 +1357,26 @@ compare_direct_and_gnu_encoding optimized_loop
 compare_direct_and_gnu_encoding stack_args
 compare_direct_and_gnu_encoding dynamic_shift
 compare_direct_and_gnu_encoding dynamic_shift_large
+
+vector_disassembly=$("$spu_objdump" -dr "$tmp/vector_abi.o")
+grep -Eq 'a[[:space:]]+\$3,\$4,\$3' <<<"$vector_disassembly" || {
+    printf '%s\n' "$vector_disassembly" >&2
+    echo "LLVM vector addition did not select native SPU a" >&2
+    exit 1
+}
+cat >"$tmp/vector_abi_reference.s" <<'ASM'
+.text
+a $3,$4,$3
+ASM
+"$spu_as" -o "$tmp/vector_abi_reference.o" "$tmp/vector_abi_reference.s"
+vector_reference=$("$spu_objdump" -d "$tmp/vector_abi_reference.o" | \
+    awk '$6 == "a" { print $2 $3 $4 $5 }')
+vector_actual=$("$spu_objdump" -d "$tmp/vector_abi.o" | \
+    awk '$6 == "a" { print $2 $3 $4 $5 }')
+[[ "$vector_actual" == "$vector_reference" ]] || {
+    echo "LLVM vector addition encoding differs from GNU SPU binutils" >&2
+    exit 1
+}
 
 stack_args_disassembly=$("$spu_objdump" -dr "$tmp/stack_args.o")
 if ! grep -Eq 'lqd[[:space:]]+\$[0-9]+,160\(\$1\)' \
@@ -1377,6 +1472,33 @@ done
     "$tmp/scalar.o" "$tmp/optimized_loop.o" "$tmp/stack_args.o" \
     "$tmp/dynamic_shift.o"
 
+cat >"$tmp/vector_abi_start.s" <<'ASM'
+.text
+.p2align 3
+.globl _start
+.type _start,@function
+_start:
+  ilhu $1,3
+  lnop
+  iohl $1,0xffe0
+  lnop
+  brsl $lr,cellspu_vector_abi_test
+  lnop
+  wrch $ch28,$3
+  lnop
+  brsl $lr,cellspu_vector_stack_test
+  lnop
+  wrch $ch28,$3
+  lnop
+  stop 0
+.size _start,.-_start
+ASM
+"$spu_as" -o "$tmp/vector_abi_start.o" "$tmp/vector_abi_start.s"
+"$spu_ld" -Ttext=0 -e _start -o "$tmp/vector_abi.elf" \
+    "$tmp/vector_abi_start.o" "$tmp/vector_abi_bridge.o" \
+    "$tmp/vector_stack_bridge.o" \
+    "$tmp/vector_abi.o"
+
 cat >"$tmp/start_large_mem.s" <<'ASM'
 .text
 .p2align 3
@@ -1450,6 +1572,27 @@ if [[ "$large_mem_bytes" != 4 || "$large_mem_actual" != 5a17c0de ]]; then
     exit 1
 fi
 
+if ! (cd "$tmp" && ANERG_MBOX="$tmp/vector_abi_mailbox" \
+      timeout "${SPU_EMULATOR_TIMEOUT:-10s}" "$emulator" \
+      "$tmp/vector_abi.elf") >"$tmp/vector_abi_emulator.log" 2>&1; then
+    cat "$tmp/vector_abi_emulator.log" >&2
+    echo "SPU vector ABI image failed or timed out in the emulator" >&2
+    exit 1
+fi
+if ! grep -Fq '####### stop instruction reached:' \
+        "$tmp/vector_abi_emulator.log"; then
+    cat "$tmp/vector_abi_emulator.log" >&2
+    echo "SPU vector ABI image did not reach stop" >&2
+    exit 1
+fi
+vector_abi_bytes=$(wc -c <"$tmp/vector_abi_mailbox")
+vector_abi_actual=$(od -An -v -tx1 "$tmp/vector_abi_mailbox" | \
+    tr -d '[:space:]')
+if [[ "$vector_abi_bytes" != 8 || "$vector_abi_actual" != 0000000000000000 ]]; then
+    echo "expected register and stack-passed GCC-to-Rust vector ABI results 0000000000000000; got ${vector_abi_actual:-<empty>} ($vector_abi_bytes bytes)" >&2
+    exit 1
+fi
+
 byte_count=$(wc -c <"$tmp/mailbox")
 actual=$(od -An -v -tx1 "$tmp/mailbox" | tr -d '[:space:]')
 expected=000068acffffbbbc000012300000567c0000444c000012350000002a
@@ -1488,4 +1631,4 @@ if [[ "$byte_count" != 464 || "$actual" != "$expected" ]]; then
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic, 64-bit comparisons, memory, C ABI, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 116 main results and validated a static pointer above 64 KiB in large-memory mode\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 116 main results, checked register-passed and 73rd stack-passed GCC-to-Rust v4i32 values, and validated a static pointer above 64 KiB in large-memory mode\n'

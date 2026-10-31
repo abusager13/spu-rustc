@@ -89,6 +89,16 @@ memory operations:
    `R_SPU_ADDR16_LO`; its linker places the pointer at `0x10010`, and the
    emulator reads the same value after both halves are resolved.
 
+An additional vector ABI image compiles one Rust `u32x4` addition to native
+SPU `a`. A GCC C caller passes two four-lane vectors, checks all four returned
+lanes, and reaches `stop` with a success result in the emulator. GNU
+`spu-as` confirms the instruction encoding. A second GCC call passes 72 vectors
+in registers and a 73rd on the stack; the Rust callee returns the last vector
+and the caller checks every lane. The test enables Rust's internal `repr(simd)`
+feature with `RUSTC_BOOTSTRAP=1` and retargets host Rust LLVM IR. It covers
+these narrow `v4i32` cases, not a stable Rust SIMD API or general vector
+support.
+
 In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
 from a minimal `#![no_core]` fixture with `u32` addition, `u64`
@@ -186,9 +196,11 @@ test-only SPU GCC caller verifies signed and unsigned `i16` return values across
 the C ABI. The stack-argument fixture checks the 73rd `u32` argument across GCC
 and Rust caller/callee boundaries, including a Rust call whose arguments are
 constants. The `u64` C ABI case covers one signature and one operand pair;
-other 64-bit ABI combinations, vectors, varargs, and general ABI behavior
-remain unvalidated. The optimized loop covers one loop shape with two
-loop-carried values and an ordinary helper call; general loops, calls, and
+other 64-bit ABI combinations, varargs, and general ABI behavior remain
+unvalidated. The vector C-ABI probe covers a `v4i32` addition and one 73rd
+stack-passed `v4i32` argument/return; other vector widths, vector aggregates,
+and additional stack layouts remain unvalidated. The optimized loop covers one
+loop shape with two loop-carried values and an ordinary helper call; general loops, calls, and
 `phi` lowering remain unvalidated. The raw-pointer functions are `unsafe`; no
 pointer bounds, provenance, or ownership guarantee is added by this backend test. It
 covers selected accesses in a 32-byte fixture, including packed halfword and
