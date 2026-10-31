@@ -46,6 +46,9 @@ memory operations:
    twenty `i64` equality, inequality, signed, and unsigned comparison results.
    A GCC caller also checks all ten predicates over 185 deterministic operand
    pairs, including equal high words with low words across the sign boundary.
+   A Rust fixture preserves a real conditional branch for each of the ten
+   `i64` predicates with path-specific volatile reads; boundary cases exercise
+   both outcomes through a GCC caller and the emulator.
    Optimized Rust `select` cases also check signed `i64`, unsigned `u64`,
    equality, and signed `i32` conditions selecting 64-bit constants. The
    lowering sign-extends scalar comparison masks when the selected value is

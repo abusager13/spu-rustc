@@ -874,6 +874,10 @@ physical hardware.
   greater-or-equal uses the inverse of the reversed strict comparison. A GCC
   caller checks all ten signed and unsigned integer comparison predicates for
   185 deterministic operand pairs, plus explicit boundary cases. The LLVM
+  boundary fixture also forces actual conditional control flow for all ten
+  predicates with path-specific volatile reads; the GCC caller and emulator
+  check both outcomes, and LLVM's emitted object encodings match GNU SPU
+  binutils. The LLVM
   smoke suite passed 118 mailbox results. The same suite checks optimized Rust
   `select` expressions whose signed `i64`, unsigned `u64`, equality, or signed
   `i32` conditions select 64-bit constants. These exposed a separate lowering

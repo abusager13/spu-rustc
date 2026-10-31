@@ -117,6 +117,8 @@ logical-right, and arithmetic-right `i32` shifts,
 both outcomes of all ten signed and unsigned `i32` and `i16` branches; twenty
 equality, inequality, signed, and unsigned `i64` comparison cases, including
 all ten predicates across a deterministic matrix of 185 operand pairs; an
+emulator-checked conditional branch for each of the ten 64-bit predicates,
+with both outcomes exercised; an
 optimized signed/unsigned comparison and equality select returning full-width
 `u64` values; an
 unoptimized `while` loop; an optimized loop with loop-carried `phi` values and

@@ -166,6 +166,8 @@ execution gate is passed.
    both outcomes of all ten signed and unsigned Rust `i32` and `i16` comparison
    branches; twenty packed `i64` equality, inequality, signed, and unsigned
    comparison cases and a 185-pair matrix across all ten predicates; an
+   emulator-checked conditional branch for each of the ten 64-bit predicates,
+   with both outcomes exercised; an
    optimized signed/unsigned comparison and equality select returning full
    64-bit values; an
    unoptimized stack-backed loop; an optimized loop with

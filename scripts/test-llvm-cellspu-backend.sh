@@ -535,6 +535,38 @@ pub extern "C" fn select_eq_u64(a: u64, b: u64) -> u64 {
 pub extern "C" fn select_slt_i32_to_u64(a: i32, b: i32) -> u64 {
     if a < b { 0x1234_5678_9abc_def0 } else { 0xfedc_ba98_7654_3210 }
 }
+
+macro_rules! branch_choose {
+    ($name:ident, $ty:ty, $predicate:tt) => {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn $name(
+            lhs: $ty,
+            rhs: $ty,
+            when_true: *const u32,
+            when_false: *const u32,
+        ) -> u32 {
+            if lhs $predicate rhs {
+                unsafe { core::ptr::read_volatile(when_true) }
+            } else {
+                // Keep a path-specific volatile access count so LLVM cannot
+                // replace this comparison branch with a selected pointer.
+                let _discarded = unsafe { core::ptr::read_volatile(when_false) };
+                unsafe { core::ptr::read_volatile(when_false) }
+            }
+        }
+    };
+}
+
+branch_choose!(branch_choose_eq_u64, u64, ==);
+branch_choose!(branch_choose_ne_u64, u64, !=);
+branch_choose!(branch_choose_slt_i64, i64, <);
+branch_choose!(branch_choose_sle_i64, i64, <=);
+branch_choose!(branch_choose_sgt_i64, i64, >);
+branch_choose!(branch_choose_sge_i64, i64, >=);
+branch_choose!(branch_choose_ult_u64, u64, <);
+branch_choose!(branch_choose_ule_u64, u64, <=);
+branch_choose!(branch_choose_ugt_u64, u64, >);
+branch_choose!(branch_choose_uge_u64, u64, >=);
 RUST
 "$rustc" --crate-type=lib --emit=llvm-ir -C panic=abort -C opt-level=1 \
     -o "$tmp/optimized_loop.ll" "$tmp/optimized_loop.rs"
@@ -543,6 +575,18 @@ for function in select_slt_i64 select_sle_i64 select_sgt_i64 select_sge_i64 \
     if ! sed -n "/define .*@${function}(/,/^}/p" "$tmp/optimized_loop.ll" |
             grep -Fq 'select i1'; then
         echo "Rust ${function} fixture did not generate an LLVM select" >&2
+        exit 1
+    fi
+done
+for function in branch_choose_eq_u64 branch_choose_ne_u64 \
+    branch_choose_slt_i64 branch_choose_sle_i64 \
+    branch_choose_sgt_i64 branch_choose_sge_i64 \
+    branch_choose_ult_u64 branch_choose_ule_u64 \
+    branch_choose_ugt_u64 branch_choose_uge_u64; do
+    branch_ir=$(sed -n "/define .*@${function}(/,/^}/p" "$tmp/optimized_loop.ll")
+    if ! grep -Fq 'br i1' <<<"$branch_ir" || \
+       ! grep -Fq 'load volatile' <<<"$branch_ir"; then
+        echo "Rust ${function} fixture did not preserve a conditional volatile-load branch" >&2
         exit 1
     fi
 done
@@ -882,6 +926,42 @@ extern unsigned long long select_sge_i64(long long lhs, long long rhs);
 extern unsigned long long select_ult_u64(unsigned long long lhs, unsigned long long rhs);
 extern unsigned long long select_eq_u64(unsigned long long lhs, unsigned long long rhs);
 extern unsigned long long select_slt_i32_to_u64(int lhs, int rhs);
+extern unsigned int branch_choose_eq_u64(unsigned long long lhs,
+                                         unsigned long long rhs,
+                                         const unsigned int *yes,
+                                         const unsigned int *no);
+extern unsigned int branch_choose_ne_u64(unsigned long long lhs,
+                                         unsigned long long rhs,
+                                         const unsigned int *yes,
+                                         const unsigned int *no);
+extern unsigned int branch_choose_slt_i64(long long lhs, long long rhs,
+                                          const unsigned int *yes,
+                                          const unsigned int *no);
+extern unsigned int branch_choose_sle_i64(long long lhs, long long rhs,
+                                          const unsigned int *yes,
+                                          const unsigned int *no);
+extern unsigned int branch_choose_sgt_i64(long long lhs, long long rhs,
+                                          const unsigned int *yes,
+                                          const unsigned int *no);
+extern unsigned int branch_choose_sge_i64(long long lhs, long long rhs,
+                                          const unsigned int *yes,
+                                          const unsigned int *no);
+extern unsigned int branch_choose_ult_u64(unsigned long long lhs,
+                                          unsigned long long rhs,
+                                          const unsigned int *yes,
+                                          const unsigned int *no);
+extern unsigned int branch_choose_ule_u64(unsigned long long lhs,
+                                          unsigned long long rhs,
+                                          const unsigned int *yes,
+                                          const unsigned int *no);
+extern unsigned int branch_choose_ugt_u64(unsigned long long lhs,
+                                          unsigned long long rhs,
+                                          const unsigned int *yes,
+                                          const unsigned int *no);
+extern unsigned int branch_choose_uge_u64(unsigned long long lhs,
+                                          unsigned long long rhs,
+                                          const unsigned int *yes,
+                                          const unsigned int *no);
 
 unsigned int gcc_compare_i64(void) {
     long long signed_min = (-9223372036854775807LL - 1LL);
@@ -914,6 +994,7 @@ unsigned int gcc_compare_i64(void) {
 
 #define CHECK_SIGNED(a, b, lt, eq, gt, code) do { \
     long long lhs = (a), rhs = (b); \
+    unsigned int yes = 0x13579bdfu, no = 0x2468ace0u; \
     if (branch_eq_u64((unsigned long long)lhs, (unsigned long long)rhs) != (eq) || \
         branch_ne_u64((unsigned long long)lhs, (unsigned long long)rhs) != !(eq) || \
         branch_slt_i64(lhs, rhs) != (lt) || \
@@ -924,10 +1005,15 @@ unsigned int gcc_compare_i64(void) {
     if (select_sle_i64(lhs, rhs) != (((lt) || (eq)) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL)) return 200 + (code); \
     if (select_sgt_i64(lhs, rhs) != ((gt) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL)) return 300 + (code); \
     if (select_sge_i64(lhs, rhs) != (((gt) || (eq)) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL)) return 400 + (code); \
+    if (branch_choose_slt_i64(lhs, rhs, &yes, &no) != ((lt) ? yes : no) || \
+        branch_choose_sle_i64(lhs, rhs, &yes, &no) != (((lt) || (eq)) ? yes : no) || \
+        branch_choose_sgt_i64(lhs, rhs, &yes, &no) != ((gt) ? yes : no) || \
+        branch_choose_sge_i64(lhs, rhs, &yes, &no) != (((gt) || (eq)) ? yes : no)) return 500 + (code); \
 } while (0)
 
 #define CHECK_UNSIGNED(a, b, lt, eq, gt, code) do { \
     unsigned long long lhs = (a), rhs = (b); \
+    unsigned int yes = 0x13579bdfu, no = 0x2468ace0u; \
     if (branch_eq_u64(lhs, rhs) != (eq) || \
         branch_ne_u64(lhs, rhs) != !(eq) || \
         branch_ult_u64(lhs, rhs) != (lt) || \
@@ -936,6 +1022,12 @@ unsigned int gcc_compare_i64(void) {
         branch_uge_u64(lhs, rhs) != ((gt) || (eq)) || \
         select_ult_u64(lhs, rhs) != ((lt) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL) || \
         select_eq_u64(lhs, rhs) != ((eq) ? 0x123456789abcdef0ULL : 0xfedcba9876543210ULL)) return (code); \
+    if (branch_choose_eq_u64(lhs, rhs, &yes, &no) != ((eq) ? yes : no) || \
+        branch_choose_ne_u64(lhs, rhs, &yes, &no) != (!(eq) ? yes : no) || \
+        branch_choose_ult_u64(lhs, rhs, &yes, &no) != ((lt) ? yes : no) || \
+        branch_choose_ule_u64(lhs, rhs, &yes, &no) != (((lt) || (eq)) ? yes : no) || \
+        branch_choose_ugt_u64(lhs, rhs, &yes, &no) != ((gt) ? yes : no) || \
+        branch_choose_uge_u64(lhs, rhs, &yes, &no) != (((gt) || (eq)) ? yes : no)) return 600 + (code); \
 } while (0)
 
 unsigned int gcc_compare_i64_boundaries(void) {
@@ -1848,6 +1940,24 @@ if [[ "$optimized_loop_disassembly" != *'ai'*'3'* || \
     printf '%s\n' "$optimized_loop_disassembly" >&2
     exit 1
 fi
+for function in branch_choose_eq_u64 branch_choose_ne_u64 \
+    branch_choose_slt_i64 branch_choose_sle_i64 \
+    branch_choose_sgt_i64 branch_choose_sge_i64 \
+    branch_choose_ult_u64 branch_choose_ule_u64 \
+    branch_choose_ugt_u64 branch_choose_uge_u64; do
+    branch_function=$(awk -v symbol="$function" '
+        index($0, "<" symbol ">:") { in_function = 1 }
+        in_function && /^[[:xdigit:]]+[[:space:]]+<[^>]+>:/ && \
+            index($0, "<" symbol ">:") == 0 { exit }
+        in_function { print }
+    ' <<<"$optimized_loop_disassembly")
+    if ! grep -Eq '[[:space:]](brnz|brz|brhnz|brhz)[[:space:]]' \
+            <<<"$branch_function"; then
+        echo "LLVM-generated ${function} does not contain a native conditional SPU branch" >&2
+        printf '%s\n' "$branch_function" >&2
+        exit 1
+    fi
+done
 
 object_header=$("$spu_readelf" -h "$tmp/scalar.o")
 for expected in \
