@@ -263,6 +263,17 @@ execution gate is passed.
    neighboring-word preservation. The fixture is `unsafe` and limited to one
    aligned 32-byte array.
 
+   Native narrow scalar integer arithmetic and logic for `u16`/`i16` and
+   `u8`/`i8` are now implemented and validated across both the LLVM backend
+   and the direct-rustc compiler. LLVM's MC code emitter implements machine
+   encodings for `ah`, `ahi`, `sfh`, `mpy`, `mpyi`, `mpyu`, `shlh`, `shlhi`,
+   `rothm`, `rothmi`, `rotmah`, `rotmahi`, `orhi`, `xsbh`, and `xshw`.
+   Instruction encodings match GNU SPU binutils byte for byte. Direct stage1
+   rustc `#![no_core]` and LLVM `#![no_std]` suites both check 26 distinct
+   operations in the emulator: addition, subtraction, multiplication, AND, OR,
+   XOR, left shifts, logical and arithmetic right shifts, widening multiply,
+   and sign/zero extensions.
+
 6. **Prove target code generation and ELF correctness.** Define and test the
    `spu-sony-ps3` target contract: SPU ISA, triple, data layout, calling
    convention, address spaces, relocations, stack frames, memory operations,

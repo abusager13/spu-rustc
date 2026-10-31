@@ -47,6 +47,18 @@ including neighbor preservation across 16-byte quadwords. These functions are
 `unsafe`; this does not validate bounds, arbitrary pointer arithmetic, or
 unaligned access.
 
+A narrow scalar integer arithmetic fixture (`u16_u8_arithmetic.rs`) exercises
+native 16-bit and 8-bit arithmetic, bitwise logic, shifts, and extensions:
+`u16` addition, subtraction, multiplication, AND, OR, XOR, left shifts, logical
+right shifts, and widening multiplication; signed `i16` arithmetic right shifts;
+`u8` addition, subtraction, multiplication, AND, OR, and XOR; and `i8`/`u8` and
+`i16`/`u16` sign and zero extensions. Direct rustc emission exercises native SPU
+`ah`, `ahi`, `sfh`, `mpy`, `mpyi`, `mpyu`, `shlh`, `shlhi`, `rothm`, `rothmi`,
+`rotmah`, `rotmahi`, `orhi`, `xsbh`, and `xshw` instructions, matching GNU SPU
+binutils encodings byte for byte. GNU `spu-ld` links the object with an assembly
+caller (`u16_u8_start.s`), and the emulator checks all 26 results (104 bytes)
+before halting at `stop`.
+
 The fixture uses Rust ABI because rustc 1.99.1 currently panics while lowering
 `extern "C"` for the custom `arch = "spu"` target. The custom target JSON is
 experimental and is not an in-tree rustc target. The source hand-defines only

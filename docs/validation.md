@@ -904,3 +904,22 @@ physical hardware.
   image now passes 92 mailbox results, plus the separate four-product image.
   This remains `#![no_core]` coverage and does not establish ordinary
   `#![no_std]` or `core` support.
+- Implemented and validated native narrow scalar integer operations for `u16`/`i16`
+  and `u8`/`i8` across both LLVM direct object emission and the stage1 rustc
+  compiler. The LLVM target's `SPUMCCodeEmitter.cpp` lacked machine encodings
+  for halfword and byte arithmetic, shifts, and extensions, causing direct
+  object emission to abort with an unsupported instruction error on narrow
+  types. Implemented MC encodings for `ah`, `ahi`, `sfh`, `sfhi`, `mpy`, `mpyi`,
+  `mpyu`, `mpyui`, `shlh`, `shlhi`, `rothm`, `rothmi`, `rotmah`, `rotmahi`,
+  `andhi`, `orhi`, `xorhi`, `xsbh`, and `xshw`. GNU `spu-as` matches all emitted
+  encodings byte for byte.
+  A direct-rustc `#![no_core]` fixture (`experiments/rustc-cellspu/u16_u8_arithmetic.rs`
+  and `u16_u8_start.s`) compiles narrow operations directly into an SPU ELF image;
+  the `anergistic` emulator checked all 26 results (104 bytes in mailbox channel 28)
+  and reached `stop`. An LLVM `#![no_std]` smoke fixture (`narrow_arithmetic.rs`)
+  and GCC C bridge (`narrow_arithmetic_bridge.c`) also verify the same 26 operations
+  via `llc` direct object emission. During C-bridge testing, an emulator defect in
+  `anergistic`'s `ceqhi` instruction was identified (comparing a `u16` promoted
+  register with a negative signed immediate); the C bridge guards against this by
+  using word comparisons (`ceq`). Both `scripts/test-rustc-cellspu.sh` and
+  `scripts/test-llvm-cellspu-backend.sh` pass cleanly with full regression coverage.

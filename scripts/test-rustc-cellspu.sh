@@ -544,3 +544,85 @@ actual=$(od -An -N64 -tx1 "$tmp/indexed_memory_mailbox" | tr -d '[:space:]')
 }
 
 echo "rustc 1.99 CellSPU no_core indexed memory: GNU-matched cwx/lqx/rotqby/shufb/stqx encodings; emulator checked eight indexed loads and three stores with neighbor preservation"
+
+"$rustc" -Z unstable-options \
+    --target="$target_short_calls" \
+    --crate-type=lib --emit=obj -Cpanic=abort -Copt-level=1 \
+    -Coverflow-checks=off \
+    -o "$tmp/u16_u8_arithmetic.o" "$root/experiments/rustc-cellspu/u16_u8_arithmetic.rs"
+
+header=$("$spu_readelf" -h "$tmp/u16_u8_arithmetic.o")
+for expected in "Class:                             ELF32" \
+    "Data:                              2's complement, big endian" \
+    "Machine:                           SPU"; do
+    grep -Fq "$expected" <<<"$header" || {
+        echo "Unexpected Rust u16/u8 arithmetic object header; expected $expected" >&2
+        exit 1
+    }
+done
+
+disassembly=$("$spu_objdump" -dr "$tmp/u16_u8_arithmetic.o")
+for instruction in ah ahi sfh mpy mpyi mpyu shlh shlhi rothm rothmi rotmah rotmahi orhi xsbh xshw; do
+    grep -Eq "${instruction}[[:space:]]+\\$" <<<"$disassembly" || {
+        echo "Rust u16/u8 arithmetic object did not contain native SPU $instruction" >&2
+        exit 1
+    }
+done
+
+instructions='^(ah|ahi|sfh|mpy|mpyi|mpyu|shlh|shlhi|rothm|rothmi|rotmah|rotmahi|orhi|xsbh|xshw)$'
+"$spu_objdump" -d "$tmp/u16_u8_arithmetic.o" | awk -v instructions="$instructions" '
+    BEGIN { print ".text" }
+    $6 ~ instructions {
+        printf "%s", $6
+        for (i = 7; i <= NF && $i !~ /^#/; i++)
+            printf " %s", $i
+        print ""
+    }
+' >"$tmp/u16_u8-emitted-encoding.s"
+"$spu_as" -o "$tmp/u16_u8-emitted-encoding.o" "$tmp/u16_u8-emitted-encoding.s"
+reference=$("$spu_objdump" -d "$tmp/u16_u8-emitted-encoding.o" | \
+    awk '$6 ~ /^(ah|ahi|sfh|mpy|mpyi|mpyu|shlh|shlhi|rothm|rothmi|rotmah|rotmahi|orhi|xsbh|xshw)$/ { print $2 $3 $4 $5 }')
+actual_encoding=$("$spu_objdump" -d "$tmp/u16_u8_arithmetic.o" | \
+    awk '$6 ~ /^(ah|ahi|sfh|mpy|mpyi|mpyu|shlh|shlhi|rothm|rothmi|rotmah|rotmahi|orhi|xsbh|xshw)$/ { print $2 $3 $4 $5 }')
+if [[ "$reference" != "$actual_encoding" ]]; then
+    echo "LLVM SPU narrow integer instruction encodings differ from GNU SPU binutils" >&2
+    echo "SPU assembler: ${reference//$'\n'/ }" >&2
+    echo "LLVM object:   ${actual_encoding//$'\n'/ }" >&2
+    exit 1
+fi
+
+"$spu_as" -o "$tmp/u16_u8_start.o" \
+    "$root/experiments/rustc-cellspu/u16_u8_start.s"
+"$spu_ld" -Ttext=0 -e _start -o "$tmp/u16_u8_arithmetic.elf" \
+    "$tmp/u16_u8_start.o" "$tmp/u16_u8_arithmetic.o"
+
+if ! (cd "$tmp" && ANERG_MBOX="$tmp/u16_u8_mailbox" \
+    timeout "${SPU_EMULATOR_TIMEOUT:-10s}" "$emulator" "$tmp/u16_u8_arithmetic.elf") \
+    >"$tmp/u16_u8_emulator.log" 2>&1; then
+    cat "$tmp/u16_u8_emulator.log" >&2
+    echo "Rust CellSPU u16/u8 arithmetic emulator run failed or timed out" >&2
+    exit 1
+fi
+grep -Fq '####### stop instruction reached:' "$tmp/u16_u8_emulator.log" || {
+    cat "$tmp/u16_u8_emulator.log" >&2
+    echo "Rust CellSPU u16/u8 arithmetic image did not reach stop" >&2
+    exit 1
+}
+
+mailbox_size=$(wc -c <"$tmp/u16_u8_mailbox")
+[[ "$mailbox_size" -eq 104 ]] || {
+    echo "Expected 26 narrow arithmetic result words, got $mailbox_size bytes" >&2
+    exit 1
+}
+actual=$(od -An -N104 -tx1 "$tmp/u16_u8_mailbox" | tr -d '[:space:]')
+expected=00000d110000041200000929000003e80000159f000004ce0000023000001234
+expected+=00001dc400001230000024600000012300000123fffffff6fffffff60000008e
+expected+=000000640000007800000003000000ff000000aafffffffb000000fefffffc18
+expected+=0000beef001e8480
+[[ "$actual" == "$expected" ]] || {
+    echo "Unexpected Rust CellSPU u16/u8 arithmetic results: ${actual:-<empty>}" >&2
+    exit 1
+}
+
+echo "rustc 1.99 CellSPU no_core u16 and u8 arithmetic, shifts, and extensions: GNU-matched native encodings; emulator checked 26 operations and reached stop"
+

@@ -103,6 +103,12 @@ flow remain unvalidated.
 It also exercises runtime-indexed raw-pointer `u32` loads and stores on one
 32-byte array, checking that writes preserve neighboring words. Those
 functions are `unsafe`; this is not a general pointer-safety or bounds check.
+Native narrow scalar integer arithmetic and logic for `u16`/`i16` and `u8`/`i8`
+are also supported and verified across both direct stage1 rustc and the LLVM
+smoke harness. Direct object emission encodes `ah`, `ahi`, `sfh`, `mpy`, `mpyi`,
+`mpyu`, `shlh`, `shlhi`, `rothm`, `rothmi`, `rotmah`, `rotmahi`, `orhi`, `xsbh`,
+and `xshw`; GNU binutils confirm instruction encodings byte for byte, and the
+emulator checks all 26 arithmetic, shift, widening, and extension operations.
 
 Supported scalar functions have zero to 75 32-bit ABI parameters: integer
 values or pointers interpreted as 32-bit local-store addresses, with 72

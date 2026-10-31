@@ -135,6 +135,15 @@ The pinned emulator rejects `fa` as an unknown instruction, so this checks
 code emission only. Floating-point runtime behavior, corner cases such as
 NaNs and subnormals, and the floating-point C ABI remain unvalidated.
 
+The smoke suite also tests native narrow scalar integer operations for `u16`/`i16`
+and `u8`/`i8` (`narrow_arithmetic.rs`): addition, subtraction, multiplication,
+AND, OR, XOR, logical and arithmetic shifts, widening multiplication, and
+sign/zero extensions. The LLVM MC emitter encodes `ah`, `ahi`, `sfh`, `mpy`,
+`mpyi`, `mpyu`, `shlh`, `shlhi`, `rothm`, `rothmi`, `rotmah`, `rotmahi`,
+`orhi`, `xsbh`, and `xshw`; all encodings match GNU SPU assembler output. A
+GCC C bridge (`narrow_arithmetic_bridge.c`) and emulator execution check all
+26 operations and confirm expected runtime results.
+
 In addition to the host-rustc-to-`llc` harness, a direct-rustc probe builds a
 custom stage1 rustc against this target. It emits `EM_SPU` objects directly
 from a minimal `#![no_core]` fixture with `u32` addition, `u64`

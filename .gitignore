@@ -2,5 +2,6 @@
 /ppu-loader/target/
 *.o
 *.s
+!experiments/rustc-cellspu/*.s
 *.elf
 /rust-cell-spu-source.zip

@@ -186,3 +186,13 @@ checks this fixture and the GCC-to-Rust comparison matrix, without establishing
 general control-flow or ABI support. Optimized conditional selects also exposed
 and now cover extension of scalar predicate masks across both halves of a
 64-bit result.
+
+Native narrow scalar integer arithmetic and logic (`u16`/`i16` and `u8`/`i8`) are
+now implemented and verified across both the LLVM backend and stage1 rustc.
+LLVM's MC code emitter implements machine encodings for halfword and byte
+arithmetic, shifts, logic, and sign/zero extensions (`ah`, `ahi`, `sfh`, `mpy`,
+`mpyi`, `mpyu`, `shlh`, `shlhi`, `rothm`, `rothmi`, `rotmah`, `rotmahi`, `orhi`,
+`xsbh`, `xshw`). Encodings match GNU SPU binutils byte for byte. Direct stage1
+rustc `#![no_core]` and LLVM `#![no_std]` smoke suites both check 26 operations
+in the emulator: addition, subtraction, multiplication, bitwise AND/OR/XOR,
+logical and arithmetic shifts, widening multiplication, and sign/zero extensions.

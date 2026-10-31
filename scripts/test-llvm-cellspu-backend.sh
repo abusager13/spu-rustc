@@ -743,6 +743,65 @@ RUST
 "$rustc" --crate-type=lib --emit=llvm-ir -C panic=abort -C opt-level=1 \
     -o "$tmp/float_math.ll" "$tmp/float_math.rs"
 
+cat >"$tmp/narrow_arithmetic.rs" <<'RUST'
+#![no_std]
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_add_u16(a: u16, b: u16) -> u16 { a.wrapping_add(b) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_add_u16_imm(a: u16) -> u16 { a.wrapping_add(42) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_sub_u16(a: u16, b: u16) -> u16 { a.wrapping_sub(b) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_sub_u16_imm(a: u16) -> u16 { a.wrapping_sub(42) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_mul_u16(a: u16, b: u16) -> u16 { a.wrapping_mul(b) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_mul_u16_imm(a: u16) -> u16 { a.wrapping_mul(10) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_and_u16(a: u16, b: u16) -> u16 { a & b }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_or_u16(a: u16, b: u16) -> u16 { a | b }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_xor_u16(a: u16, b: u16) -> u16 { a ^ b }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_shl_u16(a: u16, b: u32) -> u16 { a << (b & 15) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_shl_u16_imm(a: u16) -> u16 { a << 5 }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_shr_u16(a: u16, b: u32) -> u16 { a >> (b & 15) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_shr_u16_imm(a: u16) -> u16 { a >> 5 }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_ashr_i16(a: i16, b: u32) -> i16 { a >> (b & 15) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_ashr_i16_imm(a: i16) -> i16 { a >> 5 }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_add_u8(a: u8, b: u8) -> u8 { a.wrapping_add(b) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_sub_u8(a: u8, b: u8) -> u8 { a.wrapping_sub(b) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_mul_u8(a: u8, b: u8) -> u8 { a.wrapping_mul(b) }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_and_u8(a: u8, b: u8) -> u8 { a & b }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_or_u8(a: u8, b: u8) -> u8 { a | b }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_xor_u8(a: u8, b: u8) -> u8 { a ^ b }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_sign_extend_i8(a: i8) -> i32 { a as i32 }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_zero_extend_u8(a: u8) -> u32 { a as u32 }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_sign_extend_i16(a: i16) -> i32 { a as i32 }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_zero_extend_u16(a: u16) -> u32 { a as u32 }
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_mul_u16_widening(a: u16, b: u16) -> u32 { (a as u32) * (b as u32) }
+RUST
+"$rustc" --crate-type=lib --emit=llvm-ir -C panic=abort -C opt-level=1 \
+    -o "$tmp/narrow_arithmetic.ll" "$tmp/narrow_arithmetic.rs"
+
 python3 - "$tmp/stack_args.rs" <<'PY'
 from pathlib import Path
 import sys
@@ -771,7 +830,8 @@ python3 - "$tmp/scalar.ll" "$tmp/scalar-spu.ll" \
     "$tmp/dynamic_shift.ll" "$tmp/dynamic_shift-spu.ll" \
     "$tmp/vector_abi.ll" "$tmp/vector_abi-spu.ll" \
     "$tmp/integer_division.ll" "$tmp/integer_division-spu.ll" \
-    "$tmp/float_math.ll" "$tmp/float_math-spu.ll" <<'PY'
+    "$tmp/float_math.ll" "$tmp/float_math-spu.ll" \
+    "$tmp/narrow_arithmetic.ll" "$tmp/narrow_arithmetic-spu.ll" <<'PY'
 import pathlib
 import re
 import sys
@@ -1279,6 +1339,70 @@ Path(sys.argv[1]).write_text(
 PY
 "$spu_cc" -O0 -c -o "$tmp/stack_arg_bridge.o" "$tmp/stack_arg_bridge.c"
 
+cat >"$tmp/narrow_arithmetic_bridge.c" <<'C'
+extern unsigned short rust_add_u16(unsigned short, unsigned short);
+extern unsigned short rust_add_u16_imm(unsigned short);
+extern unsigned short rust_sub_u16(unsigned short, unsigned short);
+extern unsigned short rust_sub_u16_imm(unsigned short);
+extern unsigned short rust_mul_u16(unsigned short, unsigned short);
+extern unsigned short rust_mul_u16_imm(unsigned short);
+extern unsigned short rust_and_u16(unsigned short, unsigned short);
+extern unsigned short rust_or_u16(unsigned short, unsigned short);
+extern unsigned short rust_xor_u16(unsigned short, unsigned short);
+extern unsigned short rust_shl_u16(unsigned short, unsigned int);
+extern unsigned short rust_shl_u16_imm(unsigned short);
+extern unsigned short rust_shr_u16(unsigned short, unsigned int);
+extern unsigned short rust_shr_u16_imm(unsigned short);
+extern short rust_ashr_i16(short, unsigned int);
+extern short rust_ashr_i16_imm(short);
+extern unsigned char rust_add_u8(unsigned char, unsigned char);
+extern unsigned char rust_sub_u8(unsigned char, unsigned char);
+extern unsigned char rust_mul_u8(unsigned char, unsigned char);
+extern unsigned char rust_and_u8(unsigned char, unsigned char);
+extern unsigned char rust_or_u8(unsigned char, unsigned char);
+extern unsigned char rust_xor_u8(unsigned char, unsigned char);
+extern int rust_sign_extend_i8(signed char);
+extern unsigned int rust_zero_extend_u8(unsigned char);
+extern int rust_sign_extend_i16(short);
+extern unsigned int rust_zero_extend_u16(unsigned short);
+extern unsigned int rust_mul_u16_widening(unsigned short, unsigned short);
+
+unsigned int cellspu_narrow_arithmetic_test(void) {
+    volatile int neg10 = -10;
+    volatile int neg5 = -5;
+    volatile int neg1000 = -1000;
+
+    return !(rust_add_u16(1000, 2345) == 3345 &&
+             rust_add_u16_imm(1000) == 1042 &&
+             rust_sub_u16(3345, 1000) == 2345 &&
+             rust_sub_u16_imm(1042) == 1000 &&
+             rust_mul_u16(123, 45) == 5535 &&
+             rust_mul_u16_imm(123) == 1230 &&
+             rust_and_u16(0x1234, 0x0ff0) == 0x0230 &&
+             rust_or_u16(0x1204, 0x0030) == 0x1234 &&
+             rust_xor_u16(0x1234, 0x0ff0) == 0x1dc4 &&
+             rust_shl_u16(0x0123, 4) == 0x1230 &&
+             rust_shl_u16_imm(0x0123) == 0x2460 &&
+             rust_shr_u16(0x1230, 4) == 0x0123 &&
+             rust_shr_u16_imm(0x2460) == 0x0123 &&
+             (int)rust_ashr_i16(-160, 4) == neg10 &&
+             (int)rust_ashr_i16_imm(-320) == neg10 &&
+             rust_add_u8(100, 42) == 142 &&
+             rust_sub_u8(142, 42) == 100 &&
+             rust_mul_u8(12, 10) == 120 &&
+             rust_and_u8(0xf3, 0x0f) == 0x03 &&
+             rust_or_u8(0xf0, 0x0f) == 0xff &&
+             rust_xor_u8(0xff, 0x55) == 0xaa &&
+             rust_sign_extend_i8(-5) == neg5 &&
+             rust_zero_extend_u8(0xfe) == 0x000000fe &&
+             rust_sign_extend_i16(-1000) == neg1000 &&
+             rust_zero_extend_u16(0xbeef) == 0x0000beef &&
+             rust_mul_u16_widening(1000, 2000) == 2000000);
+}
+C
+"$spu_cc" -O1 -c -o "$tmp/narrow_arithmetic_bridge.o" \
+    "$tmp/narrow_arithmetic_bridge.c"
+
 cat >"$tmp/start.s" <<'ASM'
 .text
 .p2align 3
@@ -1749,6 +1873,9 @@ ASM
 "$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
     -verify-machineinstrs -filetype=obj "$tmp/float_math-spu.ll" \
     -o "$tmp/float_math.o"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
+    -verify-machineinstrs -filetype=obj "$tmp/narrow_arithmetic-spu.ll" \
+    -o "$tmp/narrow_arithmetic.o"
 
 # Build the same instruction streams through LLVM's text printer and GNU's
 # assembler. Compare disassembly to cross-check the direct MC encodings while
@@ -1777,6 +1904,10 @@ ASM
     -verify-machineinstrs -filetype=asm "$tmp/float_math-spu.ll" \
     -o "$tmp/float_math.s"
 "$spu_as" -o "$tmp/float_math-asm.o" "$tmp/float_math.s"
+"$llc" -mtriple=cellspu-unknown-elf -mcpu=v0 -O1 \
+    -verify-machineinstrs -filetype=asm "$tmp/narrow_arithmetic-spu.ll" \
+    -o "$tmp/narrow_arithmetic.s"
+"$spu_as" -o "$tmp/narrow_arithmetic-asm.o" "$tmp/narrow_arithmetic.s"
 
 compare_direct_and_gnu_encoding() {
     local name=$1
@@ -1800,6 +1931,17 @@ compare_direct_and_gnu_encoding stack_args
 compare_direct_and_gnu_encoding dynamic_shift
 compare_direct_and_gnu_encoding dynamic_shift_large
 compare_direct_and_gnu_encoding float_math
+compare_direct_and_gnu_encoding narrow_arithmetic
+
+narrow_arithmetic_disassembly=$("$spu_objdump" -d "$tmp/narrow_arithmetic.o")
+for instruction in ah ahi sfh mpy mpyi mpyu shlh shlhi rothm rothmi rotmah rotmahi orhi xsbh xshw; do
+    if ! grep -Eq "[[:space:]]${instruction}[[:space:]]" \
+            <<<"$narrow_arithmetic_disassembly"; then
+        printf '%s\n' "$narrow_arithmetic_disassembly" >&2
+        echo "Rust narrow arithmetic operation did not select SPU ${instruction}" >&2
+        exit 1
+    fi
+done
 
 float_math_disassembly=$("$spu_objdump" -d "$tmp/float_math.o")
 for instruction in fa fs fm dfa dfs dfm fceq fcgt; do
@@ -2062,6 +2204,29 @@ libgcc=$("$spu_cc" -print-libgcc-file-name)
     "$tmp/integer_division_start.o" "$tmp/integer_division_bridge.o" \
     "$tmp/integer_division.o" "$libgcc"
 
+cat >"$tmp/narrow_arithmetic_start.s" <<'ASM'
+.text
+.p2align 3
+.globl _start
+.type _start,@function
+_start:
+  ilhu $1,3
+  lnop
+  iohl $1,0xffe0
+  lnop
+  brsl $lr,cellspu_narrow_arithmetic_test
+  lnop
+  wrch $ch28,$3
+  lnop
+  stop 0
+.size _start,.-_start
+ASM
+"$spu_as" -o "$tmp/narrow_arithmetic_start.o" \
+    "$tmp/narrow_arithmetic_start.s"
+"$spu_ld" -Ttext=0 -e _start -o "$tmp/narrow_arithmetic.elf" \
+    "$tmp/narrow_arithmetic_start.o" "$tmp/narrow_arithmetic_bridge.o" \
+    "$tmp/narrow_arithmetic.o"
+
 cat >"$tmp/start_large_mem.s" <<'ASM'
 .text
 .p2align 3
@@ -2175,6 +2340,28 @@ integer_division_actual=$(od -An -v -tx1 "$tmp/integer_division_mailbox" | \
 if [[ "$integer_division_bytes" != 4 || \
       "$integer_division_actual" != 00000000 ]]; then
     echo "expected signed and unsigned division/remainder checks to return 00000000; got ${integer_division_actual:-<empty>} ($integer_division_bytes bytes)" >&2
+    exit 1
+fi
+
+if ! (cd "$tmp" && ANERG_MBOX="$tmp/narrow_arithmetic_mailbox" \
+      timeout "${SPU_EMULATOR_TIMEOUT:-10s}" "$emulator" \
+      "$tmp/narrow_arithmetic.elf") >"$tmp/narrow_arithmetic_emulator.log" 2>&1; then
+    cat "$tmp/narrow_arithmetic_emulator.log" >&2
+    echo "SPU narrow arithmetic image failed or timed out in the emulator" >&2
+    exit 1
+fi
+if ! grep -Fq '####### stop instruction reached:' \
+        "$tmp/narrow_arithmetic_emulator.log"; then
+    cat "$tmp/narrow_arithmetic_emulator.log" >&2
+    echo "SPU narrow arithmetic image did not reach stop" >&2
+    exit 1
+fi
+narrow_arithmetic_bytes=$(wc -c <"$tmp/narrow_arithmetic_mailbox")
+narrow_arithmetic_actual=$(od -An -v -tx1 "$tmp/narrow_arithmetic_mailbox" | \
+    tr -d '[:space:]')
+if [[ "$narrow_arithmetic_bytes" != 4 || \
+      "$narrow_arithmetic_actual" != 00000000 ]]; then
+    echo "expected narrow arithmetic checks to return 00000000; got ${narrow_arithmetic_actual:-<empty>} ($narrow_arithmetic_bytes bytes)" >&2
     exit 1
 fi
 
@@ -2312,4 +2499,4 @@ if [[ "$byte_count" != 472 || "$actual" != "$expected" ]]; then
     exit 1
 fi
 
-printf 'LLVM 23.1.1 CellSPU scalar arithmetic and integer division, f32/f64 float codegen, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 118 main results and checked vector ABI, division, and R_SPU_REL32; GNU assembler matched float encodings and the relative relocation, while the emulator cannot execute the floating-point instructions\n'
+printf 'LLVM 23.1.1 CellSPU scalar arithmetic, u16/u8 operations, integer division, f32/f64 float codegen, vector C ABI, 64-bit comparisons, memory, relocation, and control flow: direct LLVM ELF32 EM_SPU objects; emulator returned 118 main results and checked narrow integer arithmetic, vector ABI, division, and R_SPU_REL32; GNU assembler matched narrow and float encodings and the relative relocation, while the emulator cannot execute the floating-point instructions\n'
